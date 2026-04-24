@@ -43,19 +43,30 @@ Create a multi-model AI agent system using OpenRouter APIs with MCP-style archit
 - /mnt/e/Codes/AgenticAI/src/utils/config.py - Configuration management
 - /mnt/e/Codes/AgenticAI/src/models/openrouter_client.py - OpenRouter API client
 - /mnt/e/Codes/AgenticAI/src/controller/model_router.py - Model routing logic
-- /mnt/e/Codes/AgenticAI/src/memory/sqlite_store.py - SQLite memory system
+- /mnt/e/Codes/AgenticAI/src/controller/chat_router.py - Chat routing with context assembly
+- /mnt/e/Codes/AgenticAI/src/memory/sqlite_store.py - SQLite memory system with chat enhancements
 - /mnt/e/Codes/AgenticAI/src/cli/main.py - CLI interface
 - /mnt/e/Codes/AgenticAI/src/tools/basic_tools.py - Basic tool execution
+- /mnt/e/Codes/AgenticAI/src/api/chat_server.py - FastAPI chat server backend
+#### UI files (Phase 2):
+- /mnt/e/Codes/AgenticAI/ui/package.json - UI dependencies
+- /mnt/e/Codes/AgenticAI/ui/src/main.tsx - Main UI entry point with glass theme
+- /mnt/e/Codes/AgenticAI/ui/src/App.tsx - App component
+- /mnt/e/Codes/AgenticAI/ui/src/components/ChatPanel.tsx - Chat UI component
+- /mnt/e/Codes/AgenticAI/ui/src/global.css - Glass theme CSS
+- /mnt/e/Codes/AgenticAI/ui/src-tauri/Cargo.toml - Rust backend dependencies
+- /mnt/e/Codes/AgenticAI/ui/src-tauri/src/lib.rs - Tauri commands for backend control
 #### Directory structure created:
 - /mnt/e/Codes/AgenticAI/src/ - Main source code
 - /mnt/e/Codes/AgenticAI/src/controller/ - Routing logic
 - /mnt/e/Codes/AgenticAI/src/models/ - Model wrappers
 - /mnt/e/Codes/AgenticAI/src/memory/ - Memory systems
 - /mnt/e/Codes/AgenticAI/src/tools/ - Tool definitions
+- /mnt/e/Codes/AgenticAI/src/api/ - API server
 - /mnt/e/Codes/AgenticAI/src/processors/ - (Empty - for Phase 2)
 - /mnt/e/Codes/AgenticAI/src/aggregators/ - (Empty - for later)
 - /mnt/e/Codes/AgenticAI/src/utils/ - Shared utilities
-- /mnt/e/Codes/AgenticAI/ui/ - (Empty - for Tauri Phase 2)
+- /mnt/e/Codes/AgenticAI/ui/ - Tauri UI (Phase 2)
 - /mnt/e/Codes/AgenticAI/data/ - Database and document storage
 
 ## Core Architecture

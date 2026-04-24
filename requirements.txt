@@ -31,6 +31,10 @@ ruff>=0.1.0
 black>=23.11.0
 mypy>=1.7.0
 
+# API server
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
 # Optional (for later phases)
 redis>=5.0.0
 pillow>=10.0.0  # For image processing

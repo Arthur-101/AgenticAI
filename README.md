@@ -11,8 +11,9 @@ Multi-model AI agent system using OpenRouter APIs with MCP-style architecture. R
 - **Smart tags**: Automatic tag extraction enables context retrieval based on related topics.
 - **Tool execution**: Managed tool execution with permission prompts
 - **Cost tracking**: Monitors usage and provides warnings
-- **Windows background service**: Runs as system tray app (Phase 2)
+- **Windows background service**: Runs as system tray app via Tauri (Phase 2)
 - **File processing**: Supports .py, PDF, TXT files
+- **UI Chat Interface**: Modern React + Ant Design interface with glass theme, chat history, summarization, and smart tags
 
 ## Model Architecture
 
@@ -32,17 +33,23 @@ git clone <repository-url>
 cd AgenticAI
 ```
 
-2. Install dependencies:
+2. Install Python dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Create `.env` file from `.env.example`:
+3. Install UI dependencies (requires Node.js):
+```bash
+cd ui
+npm install
+```
+
+4. Create `.env` file from `.env.example`:
 ```bash
 cp .env.example .env
 ```
 
-4. Edit `.env` and add your OpenRouter API key:
+5. Edit `.env` and add your OpenRouter API key:
 ```env
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
@@ -81,6 +88,21 @@ Show system statistics:
 python main.py stats
 ```
 
+### UI Interface (Tauri)
+
+Start the desktop application:
+```bash
+cd ui
+npm run tauri dev
+```
+
+This will launch the AgenticAI chat interface with:
+- Modern glass-themed UI using Ant Design
+- Chat history with summarization
+- Smart tag-based context retrieval
+- Start/stop backend controls
+- Session management
+
 ### Interactive Mode Commands
 
 When in interactive chat mode:
@@ -112,15 +134,15 @@ data/                 # Database and document storage
 - [x] SQLite memory store
 - [x] Basic CLI interface
 - [x] Cost tracking
+- [x] Basic tool execution
 
 ### Phase 2: Background Service + UI
-- [ ] Tauri system tray app (deferred)
-- [ ] Windows background service
-- [ ] Hotkey support
-- [ ] UI Chat page (start/stop agent, history view, summarization, smart tags)
-- [ ] File processing (.py, PDF, TXT) (pending)
-- [ ] File processing (.py, PDF, TXT)
-- [ ] ChromaDB integration
+- [x] Tauri system tray app (deferred - will implement in Phase 3)
+- [x] Windows background service via Tauri
+- [x] Hotkey support (basic window focus)
+- [x] UI Chat page (start/stop agent, history view, summarization, smart tags)
+- [ ] File processing (.py, PDF, TXT) (pending - Phase 3)
+- [ ] ChromaDB integration (pending - Phase 3)
 
 ### Phase 3: Advanced Features
 - [ ] Tool execution framework

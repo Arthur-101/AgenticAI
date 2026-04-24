@@ -311,6 +311,146 @@ class OpenRouterClient:
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
+    
+    async def summarize_content(
+        self,
+        content: str,
+        max_tokens: int = 400,
+        model_id: str = "openai/gpt-oss-120b",
+    ) -> str:
+        """Summarize content using gpt-oss-120b (free model)."""
+        try:
+            messages = [
+                Message(role="system", content="You are a helpful assistant that creates concise summaries. Keep the summary under 400 tokens and preserve key information."),
+                Message(role="user", content=f"Summarize the following content concisely:\n\n{content}"),
+            ]
+            
+            # Use a custom request since gpt-oss-120b isn't in our model mapping
+            request = ChatRequest(
+                model=model_id,
+                messages=messages,
+                temperature=0.2,  # Low temperature for consistent summarization
+                max_tokens=max_tokens,
+                stream=False,
+            )
+            
+            response = await self.client.post(
+                f"{self.base_url}/chat/completions",
+                json=request.dict(exclude_none=True),
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Track cost (free model but still track)
+            if "usage" in data:
+                usage = data["usage"]
+                input_tokens = usage.get("prompt_tokens", 0)
+                output_tokens = usage.get("completion_tokens", 0)
+                config.track_cost(model_id, input_tokens, output_tokens)
+            
+            # Extract summary from response
+            if "choices" in data and data["choices"]:
+                choice = data["choices"][0]
+                if "message" in choice and "content" in choice["message"]:
+                    return choice["message"]["content"].strip()
+            
+            return ""
+            
+        except Exception as e:
+            print(f"Error in summarization: {e}")
+            # Fallback to simple truncation
+            return self._fallback_summary(content, max_tokens)
+    
+    def _fallback_summary(self, content: str, max_tokens: int) -> str:
+        """Fallback summary by truncation when API fails."""
+        tokens = self.estimate_tokens(content)
+        if tokens <= max_tokens:
+            return content
+        
+        # Simple truncation
+        target_chars = max_tokens * 4  # Approximate 4 chars per token
+        if len(content) > target_chars:
+            return content[:target_chars] + "..."
+        return content
+    
+    async def extract_tags(
+        self,
+        content: str,
+        model_id: Optional[str] = None,
+        use_heuristic: bool = True,
+    ) -> List[str]:
+        """Extract tags from content using LLM or heuristic."""
+        # If model is specified, use LLM
+        if model_id:
+            try:
+                messages = [
+                    Message(role="system", content="Extract 3-5 key topic tags from the content. Return only comma-separated tags, no explanations."),
+                    Message(role="user", content=f"Extract tags from:\n\n{content}"),
+                ]
+                
+                request = ChatRequest(
+                    model=model_id,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=100,
+                    stream=False,
+                )
+                
+                response = await self.client.post(
+                    f"{self.base_url}/chat/completions",
+                    json=request.dict(exclude_none=True),
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                # Track cost
+                if "usage" in data:
+                    usage = data["usage"]
+                    input_tokens = usage.get("prompt_tokens", 0)
+                    output_tokens = usage.get("completion_tokens", 0)
+                    config.track_cost(model_id, input_tokens, output_tokens)
+                
+                # Parse tags
+                if "choices" in data and data["choices"]:
+                    choice = data["choices"][0]
+                    if "message" in choice and "content" in choice["message"]:
+                        tags_text = choice["message"]["content"].strip()
+                        tags = [tag.strip() for tag in tags_text.split(",") if tag.strip()]
+                        return tags
+                
+            except Exception as e:
+                print(f"Error in tag extraction with LLM: {e}")
+                # Fall back to heuristic if LLM fails
+                if use_heuristic:
+                    return self._heuristic_tags(content)
+                return []
+        
+        # Use heuristic if no model or fallback
+        if use_heuristic:
+            return self._heuristic_tags(content)
+        
+        return []
+    
+    def _heuristic_tags(self, content: str) -> List[str]:
+        """Extract tags using simple heuristics."""
+        import re
+        
+        # Common stop words to filter out
+        stop_words = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were", "be", "been", "being"}
+        
+        # Extract words (3+ letters) that appear multiple times
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', content.lower())
+        word_counts = {}
+        
+        for word in words:
+            if word not in stop_words:
+                word_counts[word] = word_counts.get(word, 0) + 1
+        
+        # Get top 5 most frequent words as tags
+        tags = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        return [tag[0] for tag in tags]
 
 
 # Helper function to create message list

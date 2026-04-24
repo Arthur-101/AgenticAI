@@ -104,12 +104,31 @@ class SQLiteMemoryStore:
         )
         """)
         
+        # Create messages table for chat with summaries and tags
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT,
+            role TEXT NOT NULL,
+            content_raw TEXT NOT NULL,
+            content_summary TEXT,
+            tags_json TEXT,
+            model_id TEXT,
+            tokens_used INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES conversations (id) ON DELETE CASCADE
+        )
+        """)
+        
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tools_conversation ON tool_executions(conversation_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_cost_model ON cost_tracking(model_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_cost_created ON cost_tracking(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_tags ON messages(tags_json)")
         
         self.connection.commit()
     
@@ -450,7 +469,184 @@ class SQLiteMemoryStore:
         """, (f"-{days_to_keep} days",))
         deleted_rows += cursor.rowcount
         
+        # Delete old messages
+        cursor = self._execute("""
+        DELETE FROM messages
+        WHERE created_at < datetime('now', ?)
+        """, (f"-{days_to_keep} days",))
+        deleted_rows += cursor.rowcount
+        
         return deleted_rows
+    
+    def save_message(
+        self,
+        session_id: str,
+        role: str,
+        content_raw: str,
+        content_summary: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        model_id: Optional[str] = None,
+        tokens_used: int = 0,
+    ) -> str:
+        """Save a chat message with optional summary and tags."""
+        message_id = str(uuid.uuid4())
+        self._execute(
+            """
+            INSERT INTO messages
+            (id, session_id, role, content_raw, content_summary, tags_json, model_id, tokens_used)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                message_id,
+                session_id,
+                role,
+                content_raw,
+                content_summary,
+                json.dumps(tags or []),
+                model_id,
+                tokens_used,
+            ),
+        )
+        return message_id
+    
+    def update_message_summary(
+        self,
+        message_id: str,
+        content_summary: str,
+    ) -> None:
+        """Update the summary for an existing message."""
+        self._execute(
+            """
+            UPDATE messages
+            SET content_summary = ?
+            WHERE id = ?
+            """,
+            (content_summary, message_id),
+        )
+    
+    def update_message_tags(
+        self,
+        message_id: str,
+        tags: List[str],
+    ) -> None:
+        """Update tags for an existing message."""
+        self._execute(
+            """
+            UPDATE messages
+            SET tags_json = ?
+            WHERE id = ?
+            """,
+            (json.dumps(tags), message_id),
+        )
+    
+    def get_messages(
+        self,
+        session_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Get messages for a session."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+        SELECT id, role, content_raw, content_summary, tags_json, model_id, tokens_used, created_at
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+        LIMIT ? OFFSET ?
+        """, (session_id, limit, offset))
+        
+        rows = cursor.fetchall()
+        messages = []
+        
+        for row in rows:
+            messages.append({
+                "id": row["id"],
+                "role": row["role"],
+                "content_raw": row["content_raw"],
+                "content_summary": row["content_summary"],
+                "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
+                "model_id": row["model_id"],
+                "tokens_used": row["tokens_used"],
+                "created_at": row["created_at"],
+            })
+        
+        return messages
+    
+    def get_messages_by_tags(
+        self,
+        tags: List[str],
+        session_id: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Get messages that match any of the given tags."""
+        cursor = self.connection.cursor()
+        
+        # Build tag matching query
+        tag_conditions = []
+        params = []
+        
+        for tag in tags:
+            tag_conditions.append("tags_json LIKE ?")
+            params.append(f'%"{tag}"%')
+        
+        query = """
+        SELECT id, session_id, role, content_raw, content_summary, tags_json, model_id, tokens_used, created_at
+        FROM messages
+        WHERE ("""
+        query += " OR ".join(tag_conditions)
+        query += ")"
+        
+        if session_id:
+            query += " AND session_id = ?"
+            params.append(session_id)
+        
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        messages = []
+        for row in rows:
+            messages.append({
+                "id": row["id"],
+                "session_id": row["session_id"],
+                "role": row["role"],
+                "content_raw": row["content_raw"],
+                "content_summary": row["content_summary"],
+                "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
+                "model_id": row["model_id"],
+                "tokens_used": row["tokens_used"],
+                "created_at": row["created_at"],
+            })
+        
+        return messages
+    
+    def get_recent_summaries(
+        self,
+        session_id: str,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Get recent message summaries for context building."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+        SELECT role, content_summary
+        FROM messages
+        WHERE session_id = ? AND content_summary IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT ?
+        """, (session_id, limit))
+        
+        rows = cursor.fetchall()
+        summaries = []
+        
+        for row in rows:
+            summaries.append({
+                "role": row["role"],
+                "content_summary": row["content_summary"],
+            })
+        
+        return summaries
     
     def get_database_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
@@ -459,7 +655,7 @@ class SQLiteMemoryStore:
         stats = {}
         
         # Count tables
-        tables = ["conversations", "tool_executions", "documents", "cost_tracking"]
+        tables = ["conversations", "tool_executions", "documents", "cost_tracking", "messages"]
         for table in tables:
             cursor.execute(f"SELECT COUNT(*) as count FROM {table}")
             stats[f"{table}_count"] = cursor.fetchone()["count"]

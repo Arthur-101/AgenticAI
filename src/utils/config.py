@@ -54,6 +54,7 @@ class Settings(BaseSettings):
         "mimo/mimo-v2-pro": {"input": 1.50, "output": 4.50},
         "deepseek/deepseek-v3.2": {"input": 0.14, "output": 0.28},
         "google/gemini-3.1-pro": {"input": 1.25, "output": 5.00},
+        "openai/gpt-oss-120b": {"input": 0.0, "output": 0.0},  # Free model for summarization
     }
 
     # ── Task‑type → model mapping (initial rule set) ───────────
@@ -64,6 +65,12 @@ class Settings(BaseSettings):
         "multimodal": "gemini-3.1-pro",
         "default": "qwen-2.5-32b-instruct",
     }
+    
+    # ── Chat enhancements ─────────────────────────────────────
+    default_chat_model: str = "gemini-2.5-flash-lite"
+    system_prompt: str = "You are AgenticAI, a helpful assistant with multi-model capabilities. You can reason, code, analyze files, and use tools when needed."
+    summary_max_tokens: int = 400
+    tag_extraction_model: Optional[str] = None
 
     # -----------------------------------------------------------------
     # Pydantic v2 configuration – replaces the old `class Config`
@@ -143,6 +150,7 @@ class ConfigManager:
             "mimo-v2-pro": "mimo/mimo-v2-pro",
             "deepseek-v3.2": "deepseek/deepseek-v3.2",
             "gemini-3.1-pro": "google/gemini-3.1-pro",
+            "gpt-oss-120b": "openai/gpt-oss-120b",
         }
         return mapping.get(model_name, model_name)
     
