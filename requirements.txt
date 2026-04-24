@@ -1,0 +1,39 @@
+# Core dependencies
+openai>=1.0.0
+langchain>=0.2.0
+langchain-openai>=0.1.0
+langchain-community>=0.0.0
+requests>=2.31.0
+httpx>=0.25.0
+
+# Memory & Storage
+# sqlite3>=3.40.0  Installed using `sudo apt install sqlite3 libsqlite3-dev`
+chromadb>=0.4.22
+sentence-transformers>=2.2.0
+pydantic>=2.5.0
+pydantic-settings>=2.0.0
+
+# File processing
+PyPDF2>=3.0.0
+python-docx>=1.1.0
+pdfplumber>=0.10.0
+
+# CLI & Utilities
+click>=8.1.0
+rich>=13.7.0
+python-dotenv>=1.0.0
+typing-extensions>=4.8.0
+
+# Development & Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+ruff>=0.1.0
+black>=23.11.0
+mypy>=1.7.0
+
+# Optional (for later phases)
+redis>=5.0.0
+pillow>=10.0.0  # For image processing
+pytesseract>=0.3.10  # For OCR
+numpy>=1.24.0
+pandas>=2.0.0
