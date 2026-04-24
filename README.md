@@ -171,11 +171,3 @@ Type checking:
 ```bash
 mypy src/
 ```
-
-## License
-
-[Your License Here]
-
-## Contributing
-
-[Your Contribution Guidelines Here]
