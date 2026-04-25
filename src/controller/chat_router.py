@@ -27,7 +27,7 @@ class ChatRouter:
         self.client = None
         self.current_session_id = self.session_manager.current_session_id
     
-    async def initialize_client(self):
+    def initialize_client(self):
         """Initialize OpenRouter client."""
         self.client = OpenRouterClient()
     
@@ -284,18 +284,17 @@ class ChatRouter:
         """Get statistics for current session."""
         return self.session_manager.get_session_stats()
     
-    async def close(self):
-        """Close resources."""
-        if self.client:
-            await self.client.close()
-        self.memory_store.close()
+    def close(self):
+        """Cleanup resources."""
+        if self.memory_store:
+            self.memory_store.close()
     
     async def __aenter__(self):
-        await self.initialize_client()
+        self.initialize_client()
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
+        self.close()
 
 
 # Helper function for simple chat
