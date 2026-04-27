@@ -4,19 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 
 const { Header, Content, Footer } = Layout;
 
-interface ChatMessage {
-  id: string;
-  role: string;
-  content_raw: string;
-  content_summary?: string;
-  tags: string[];
-  model_id?: string;
-  tokens_used: number;
-  created_at: string;
-}
-
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<Array<{role: string; content: string}>>([]);
+  const [messages, setMessages] = useState<Array<{role: string; content: string; model_id?: string}>>([]);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
   const [backendRunning, setBackendRunning] = useState(false);
@@ -58,6 +47,7 @@ export default function ChatPanel() {
       const formattedMessages = history.map(msg => ({
         role: msg.role,
         content: msg.content_raw,
+        model_id: msg.model_id,
       }));
       
       setMessages(formattedMessages);
@@ -76,12 +66,12 @@ export default function ChatPanel() {
 
     try {
       // Send message to backend
-      const response = await invoke<string>('send_chat_message', {
+      const result = await invoke<{response: string, model: string, session_id: string}>('send_chat_message', {
         message: input,
         sessionId: sessionId || null,
       });
       
-      const botMsg = { role: 'assistant', content: response };
+      const botMsg = { role: 'assistant', content: result.response, model_id: result.model };
       setMessages(prev => [...prev, botMsg]);
       
     } catch (error) {
@@ -130,6 +120,11 @@ export default function ChatPanel() {
                     }}>
                       {msg.content}
                     </div>
+                    {msg.model_id && msg.role === 'assistant' && (
+                      <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px', textAlign: 'right' }}>
+                        Model: {msg.model_id}
+                      </div>
+                    )}
                   </div>
                 </div>
               </List.Item>

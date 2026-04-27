@@ -41,7 +41,7 @@ class ChatRouter:
     ) -> Dict[str, Any]:
         """Process chat message with context assembly."""
         if self.client is None:
-            await self.initialize_client()
+            self.initialize_client()
         
         # Use provided session or current session
         effective_session_id = session_id or self.current_session_id
@@ -128,14 +128,28 @@ class ChatRouter:
         
         recent_summaries = []
         if use_summaries:
-            # Get recent summaries for context
-            summaries = self.memory_store.get_recent_summaries(session_id, limit=5)
-            recent_summaries = summaries
+            # Fetch unique summaries to provide broad context without confusing the model
+            cursor = self.memory_store.connection.cursor()
+            cursor.execute("""
+            SELECT DISTINCT content_summary
+            FROM (
+                SELECT content_summary, MIN(created_at) as first_created
+                FROM messages
+                WHERE session_id = ? AND content_summary IS NOT NULL
+                GROUP BY content_summary
+                ORDER BY first_created DESC
+                LIMIT 3
+            )
+            ORDER BY first_created ASC
+            """, (session_id,))
+            rows = cursor.fetchall()
+            summaries = [row["content_summary"] for row in rows]
+            recent_summaries = [{"content_summary": s} for s in summaries]
             
-            # Add summaries to context
-            for summary in summaries:
+            if summaries:
+                summary_text = "\n".join(f"- {s}" for s in summaries)
                 context_messages.append(
-                    Message(role=summary["role"], content=f"[Summary] {summary['content_summary']}")
+                    Message(role="system", content=f"Summary of older conversation:\n{summary_text}")
                 )
         
         tag_matched_messages = []
@@ -145,13 +159,18 @@ class ChatRouter:
             tag_matched_messages = matched
             
             # Add tag-matched messages to context
-            for msg in matched:
-                # Don't include current user message
-                if msg["content_raw"] != user_message:
-                    content = msg["content_summary"] or msg["content_raw"]
-                    context_messages.append(
-                        Message(role=msg["role"], content=f"[Related] {content}")
-                    )
+            related_text = "\n".join([m["content_summary"] or m["content_raw"] for m in matched if m["content_raw"] != user_message])
+            if related_text:
+                context_messages.append(
+                    Message(role="system", content=f"Related past context based on keywords:\n{related_text}")
+                )
+                
+        # Add recent raw messages (last 4 messages = 2 turns) to keep conversational style
+        recent_raw = self.memory_store.get_messages(session_id, limit=4)
+        for msg in recent_raw:
+            # The current user message is already in the db, don't add it yet
+            if msg["content_raw"] != user_message:
+                context_messages.append(Message(role=msg["role"], content=msg["content_raw"]))
         
         # Add current user message
         context_messages.append(Message(role="user", content=user_message))

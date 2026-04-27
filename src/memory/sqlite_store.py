@@ -548,11 +548,13 @@ class SQLiteMemoryStore:
         """Get messages for a session."""
         cursor = self.connection.cursor()
         cursor.execute("""
-        SELECT id, role, content_raw, content_summary, tags_json, model_id, tokens_used, created_at
-        FROM messages
-        WHERE session_id = ?
-        ORDER BY created_at ASC
-        LIMIT ? OFFSET ?
+        SELECT * FROM (
+            SELECT id, role, content_raw, content_summary, tags_json, model_id, tokens_used, created_at
+            FROM messages
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        ) ORDER BY created_at ASC
         """, (session_id, limit, offset))
         
         rows = cursor.fetchall()
