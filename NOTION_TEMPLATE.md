@@ -53,6 +53,7 @@ User Input → Controller → Decision → Model/Tool → Aggregation → Output
 - [x]  Windows background service
 - [x]  Hotkey support
 - [x]  UI Chat page (main chat, start/stop agent, history view)
+- [x]  Multiple chat sessions and sidebar navigation
 - [x]  Summarization & smart tags (backend compression and tag extraction)
 - [x]  File processing (.py, PDF, TXT) (pending)
 - [ ]  ChromaDB integration
