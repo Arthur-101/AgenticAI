@@ -1,6 +1,10 @@
 import { Layout, Card, List, Input, Button, Space, message as antdMessage } from 'antd';
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const { Header, Content, Footer } = Layout;
 
@@ -116,9 +120,33 @@ export default function ChatPanel() {
                     <div style={{ 
                       background: msg.role === 'user' ? '#e6f7ff' : '#fff', 
                       borderRadius: 18, 
-                      padding: '10px 14px' 
+                      padding: '10px 14px',
+                      overflowX: 'auto'
                     }}>
-                      {msg.content}
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          code({node, inline, className, children, ...props}: any) {
+                            const match = /language-(\w+)/.exec(className || '');
+                            return !inline && match ? (
+                              <SyntaxHighlighter
+                                style={vscDarkPlus as any}
+                                language={match[1]}
+                                PreTag="div"
+                                {...props}
+                              >
+                                {String(children).replace(/\n$/, '')}
+                              </SyntaxHighlighter>
+                            ) : (
+                              <code className={className} style={{background: '#f0f0f0', padding: '2px 4px', borderRadius: '4px'}} {...props}>
+                                {children}
+                              </code>
+                            );
+                          }
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
                     </div>
                     {msg.model_id && msg.role === 'assistant' && (
                       <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px', textAlign: 'right' }}>

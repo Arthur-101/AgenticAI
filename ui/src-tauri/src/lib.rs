@@ -149,7 +149,7 @@ async fn stop_backend_internal(app_handle: &tauri::AppHandle) -> Result<String, 
     *state.stdout.lock().await = None;
     
     // Get the child process
-    let mut child_opt = {
+    let child_opt = {
     let mut process_guard = state.process.lock().await;
         process_guard.take()
     };
@@ -223,7 +223,7 @@ async fn new_session(app_handle: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn backend_status(app_handle: tauri::AppHandle) -> Result<bool, String> {
-    let state = app_handle.state::<BackendState>();
+    let _state = app_handle.state::<BackendState>();
     
     match send_json_rpc(&app_handle, "health", json!({}), None).await {
         Ok(result) => {
@@ -245,6 +245,52 @@ pub fn run() {
             process: AsyncMutex::new(None),
             stdin: AsyncMutex::new(None),
             stdout: AsyncMutex::new(None),
+        })
+        .setup(|app| {
+            let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit AgenticAI", true, None::<&str>)?;
+            let show_i = tauri::menu::MenuItem::with_id(app, "show", "Show Chat", true, None::<&str>)?;
+            
+            let menu = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let _tray = tauri::tray::TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(true)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                        std::process::exit(0);
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             start_backend,
