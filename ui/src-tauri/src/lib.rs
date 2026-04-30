@@ -285,13 +285,6 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                let _ = window.hide();
-            }
-            _ => {}
-        })
         .invoke_handler(tauri::generate_handler![
             start_backend,
             stop_backend,

@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
 import json
+from src.processors.file_processor import FileProcessor
 
 
 class BasicTools:
@@ -97,9 +98,8 @@ class BasicTools:
                     "message": f"Permission denied for reading: {file_path}",
                 }
             
-            # Read file
-            with open(path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            # Read file using FileProcessor
+            content = FileProcessor.process_file(str(path))
             
             return {
                 "success": True,
