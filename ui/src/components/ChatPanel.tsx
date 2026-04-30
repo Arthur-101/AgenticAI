@@ -6,10 +6,11 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
-const { Header, Content, Footer } = Layout;
+const { Header, Content, Footer, Sider } = Layout;
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState<Array<{role: string; content: string; model_id?: string}>>([]);
+  const [sessions, setSessions] = useState<Array<{session_id: string; title: string; created_at: string}>>([]);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
   const [backendRunning, setBackendRunning] = useState(false);
@@ -19,6 +20,13 @@ export default function ChatPanel() {
   useEffect(() => {
     initializeBackend();
   }, []);
+
+  // Reload history when sessionId changes
+  useEffect(() => {
+    if (sessionId) {
+      loadChatHistory();
+    }
+  }, [sessionId]);
 
   const initializeBackend = async () => {
     try {
@@ -33,19 +41,36 @@ export default function ChatPanel() {
         antdMessage.success('AI backend started');
       }
       
-      // Load chat history
-      loadChatHistory();
+      // Load sessions and chat history
+      await loadSessions();
+      await loadChatHistory();
     } catch (error) {
       console.error('Failed to initialize backend:', error);
       antdMessage.error('Failed to start AI backend. Please check Python installation and dependencies.');
     }
   };
 
+  const loadSessions = async () => {
+    try {
+      if (!backendRunning) return; // Prevent loading if backend is not ready
+      const sessionsList = await invoke<any[]>('get_all_sessions');
+      setSessions(sessionsList);
+      
+      // If we don't have an active session but we have history, load the most recent one
+      if (!sessionId && sessionsList.length > 0) {
+        setSessionId(sessionsList[0].session_id);
+      }
+    } catch (error) {
+      console.error('Failed to load sessions:', error);
+    }
+  };
+
   const loadChatHistory = async () => {
     try {
+      if (!backendRunning) return;
       const history = await invoke<any[]>('get_chat_history', {
         sessionId: sessionId || null,
-        limit: 20,
+        limit: 50,
       });
       
       const formattedMessages = history.map(msg => ({
