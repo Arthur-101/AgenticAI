@@ -1,5 +1,7 @@
 """Chat router with context assembly, summarization, and tag-based retrieval."""
 import asyncio
+import re
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,6 +9,7 @@ from datetime import datetime
 from src.models.openrouter_client import OpenRouterClient, Message, ModelType
 from src.memory.sqlite_store import SQLiteMemoryStore, SessionManager
 from src.utils.config import config
+from src.processors.file_processor import FileProcessor
 
 
 @dataclass
@@ -125,6 +128,34 @@ class ChatRouter:
         
         # Add system prompt
         context_messages.append(Message(role="system", content=system_prompt))
+        
+        # Check for potential file paths in user message
+        extracted_files_context = []
+        checked_paths = set()
+        
+        # Regex to find absolute/relative paths and filenames with specific extensions
+        path_pattern = r'(?:/[a-zA-Z0-9_.-]+)+/[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+'
+        file_pattern = r'[a-zA-Z0-9_.-]+\.(?:py|txt|pdf|md|csv|json|js|ts|tsx|html|css|rs)'
+        
+        potential_paths = re.findall(path_pattern, user_message) + re.findall(file_pattern, user_message)
+        
+        for path_str in potential_paths:
+            if path_str in checked_paths: continue
+            checked_paths.add(path_str)
+            try:
+                p = Path(path_str)
+                # Ensure it's a file and not too large (e.g. limit to 1MB to avoid blowing up context)
+                if p.exists() and p.is_file():
+                    if p.stat().st_size < 1024 * 1024:  # 1MB limit
+                        content = FileProcessor.process_file(str(p))
+                        extracted_files_context.append(f"--- Contents of {path_str} ---\n{content}\n--- End of {path_str} ---")
+            except Exception:
+                pass
+                
+        if extracted_files_context:
+            context_messages.append(
+                Message(role="system", content="The user referenced the following files in their message:\n\n" + "\n\n".join(extracted_files_context))
+            )
         
         recent_summaries = []
         if use_summaries:
