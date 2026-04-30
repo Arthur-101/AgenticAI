@@ -103,6 +103,13 @@ export default function ChatPanel() {
       const botMsg = { role: 'assistant', content: result.response, model_id: result.model };
       setMessages(prev => [...prev, botMsg]);
       
+      // If this was the first message, the backend might have auto-created a session
+      // Let's reload sessions so it appears in the sidebar
+      if (!sessionId && result.session_id) {
+        setSessionId(result.session_id);
+      }
+      await loadSessions();
+      
     } catch (error) {
       console.error('Failed to send message:', error);
       const errorMsg = { role: 'assistant', content: `Error: ${error}` };
@@ -118,166 +125,198 @@ export default function ChatPanel() {
         <h1 style={{ margin: 0 }}>AgenticAI Chat</h1>
       </Header>
 
-      <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 24 }}>
-        <Card className="glass-card" style={{ width: 480, maxHeight: '70vh', overflowY: 'auto', background: 'inherit' }}>
-          <List
-            itemLayout="vertical"
-            dataSource={messages}
-            renderItem={msg => (
-              <List.Item>
-                <div style={{ display: 'flex', marginBottom: 12 }}>
-                  <div style={{
-                    flexShrink: 0,
-                    width: 32,
-                    height: 32,
-                    borderRadius: 50,
-                    background: msg.role === 'user' ? '#1890ff' : '#fafafa',
-                    marginRight: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: msg.role === 'user' ? '#fff' : '#666',
-                    fontSize: 16,
-                  }}>
-                    {msg.role === 'user' ? 'U' : 'A'}
-                  </div>
-                  <div style={{ flex: 1, maxWidth: '75%' }}>
-                    <div style={{ 
-                      background: msg.role === 'user' ? '#e6f7ff' : '#fff', 
-                      borderRadius: 18, 
-                      padding: '10px 14px',
-                      overflowX: 'auto'
-                    }}>
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          code({node, inline, className, children, ...props}: any) {
-                            const match = /language-(\w+)/.exec(className || '');
-                            return !inline && match ? (
-                              <SyntaxHighlighter
-                                style={vscDarkPlus as any}
-                                language={match[1]}
-                                PreTag="div"
-                                {...props}
-                              >
-                                {String(children).replace(/\n$/, '')}
-                              </SyntaxHighlighter>
-                            ) : (
-                              <code className={className} style={{background: '#f0f0f0', padding: '2px 4px', borderRadius: '4px'}} {...props}>
-                                {children}
-                              </code>
-                            );
-                          }
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
-                    {msg.model_id && msg.role === 'assistant' && (
-                      <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px', textAlign: 'right' }}>
-                        Model: {msg.model_id}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </List.Item>
-            )}
-          />
-        </Card>
-
-        <div style={{ marginLeft: 24, display: 'flex', flexDirection: 'column', width: 280 }}>
-          <Button 
-            type="primary" 
-            block 
-            onClick={() => {
-              setMessages([]);
-              antdMessage.success('Chat cleared');
-            }}
-          >
-            Clear Chat
-          </Button>
-          
-          <Space direction="vertical" style={{ marginTop: 16 }}>
+      <Layout hasSider style={{ background: 'inherit' }}>
+        <Sider width={250} style={{ background: '#fff', borderRight: '1px solid #f0f0f0', overflowY: 'auto' }}>
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <Button 
-              block 
-              type={backendRunning ? 'default' : 'primary'}
-              onClick={async () => {
-                try {
-                  if (backendRunning) {
-                    antdMessage.info('Stopping AI backend...');
-                    await invoke('stop_backend');
-                    setBackendRunning(false);
-                    antdMessage.success('AI backend stopped');
-                  } else {
-                    antdMessage.info('Starting AI backend...');
-                    await invoke('start_backend');
-                    setBackendRunning(true);
-                    antdMessage.success('AI backend started');
-                  }
-                } catch (error) {
-                  antdMessage.error(`Failed: ${error}`);
-                }
-              }}
-            >
-              {backendRunning ? 'Stop Agent' : 'Start Agent'}
-            </Button>
-            
-            <Button 
+              type="primary" 
               block 
               onClick={async () => {
                 try {
                   const newSessionId = await invoke<string>('new_session');
                   setSessionId(newSessionId);
                   setMessages([]);
+                  await loadSessions();
                   antdMessage.success('New chat session started');
                 } catch (error) {
                   antdMessage.error(`Failed to start new session: ${error}`);
                 }
               }}
             >
-              New Session
+              + New Chat
             </Button>
-          </Space>
-          
-          <div style={{ marginTop: 16, padding: 12, background: '#fafafa', borderRadius: 8 }}>
-            <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
-              Session ID:
+            <div style={{ marginTop: '12px', fontSize: '12px', color: '#999', textTransform: 'uppercase', fontWeight: 'bold' }}>
+              Past Chats
             </div>
-            <div style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
-              {sessionId || 'No active session'}
-            </div>
-            <div style={{ fontSize: 12, color: '#666', marginTop: 8 }}>
-              Status: <span style={{ color: backendRunning ? '#52c41a' : '#ff4d4f' }}>
-                {backendRunning ? 'Running' : 'Stopped'}
-              </span>
-            </div>
+            <List
+              dataSource={sessions}
+              renderItem={item => (
+                <div 
+                  onClick={() => {
+                    if (item.session_id !== sessionId) {
+                      setSessionId(item.session_id);
+                    }
+                  }}
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: item.session_id === sessionId ? '#e6f7ff' : 'transparent',
+                    border: item.session_id === sessionId ? '1px solid #91d5ff' : '1px solid transparent',
+                    transition: 'all 0.2s',
+                    marginBottom: '4px',
+                    fontSize: '14px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                  title={item.title}
+                >
+                  {item.title || 'Empty Chat'}
+                </div>
+              )}
+            />
           </div>
-        </div>
-      </Content>
+        </Sider>
 
-      <Footer style={{ padding: '12px 0', background: '#fff', marginTop: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Input
-            placeholder="Type a message..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onPressEnter={sendMessage}
-            style={{ width: 300, marginRight: 8 }}
-            disabled={!backendRunning || isLoading}
-          />
-          <Button 
-            type="primary" 
-            onClick={sendMessage}
-            loading={isLoading}
-            disabled={!backendRunning || !input.trim()}
-          >
-            Send
-          </Button>
-        </div>
-        <div style={{ textAlign: 'center', marginTop: 8 }}>
-          <small>© 2026 AgenticAI • Powered by Tauri + React • {backendRunning ? 'AI Ready' : 'AI Offline'}</small>
-        </div>
-      </Footer>
+        <Layout style={{ background: 'inherit' }}>
+          <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 24, overflow: 'hidden' }}>
+            <Card className="glass-card" style={{ flex: 1, maxWidth: '800px', height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column', background: 'inherit' }}>
+              <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px' }}>
+                <List
+                  itemLayout="vertical"
+                  dataSource={messages}
+                  renderItem={msg => (
+                    <List.Item>
+                      <div style={{ display: 'flex', marginBottom: 12 }}>
+                        <div style={{
+                          flexShrink: 0,
+                          width: 32,
+                          height: 32,
+                          borderRadius: 50,
+                          background: msg.role === 'user' ? '#1890ff' : '#fafafa',
+                          marginRight: 10,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: msg.role === 'user' ? '#fff' : '#666',
+                          fontSize: 16,
+                        }}>
+                          {msg.role === 'user' ? 'U' : 'A'}
+                        </div>
+                        <div style={{ flex: 1, maxWidth: '85%' }}>
+                          <div style={{ 
+                            background: msg.role === 'user' ? '#e6f7ff' : '#fff', 
+                            borderRadius: 18, 
+                            padding: '10px 14px',
+                            overflowX: 'auto'
+                          }}>
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code({node, inline, className, children, ...props}: any) {
+                                  const match = /language-(\w+)/.exec(className || '');
+                                  return !inline && match ? (
+                                    <SyntaxHighlighter
+                                      style={vscDarkPlus as any}
+                                      language={match[1]}
+                                      PreTag="div"
+                                      {...props}
+                                    >
+                                      {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                  ) : (
+                                    <code className={className} style={{background: '#f0f0f0', padding: '2px 4px', borderRadius: '4px'}} {...props}>
+                                      {children}
+                                    </code>
+                                  );
+                                }
+                              }}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
+                          {msg.model_id && msg.role === 'assistant' && (
+                            <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px', textAlign: 'right' }}>
+                              Model: {msg.model_id}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </List.Item>
+                  )}
+                />
+              </div>
+            </Card>
+
+            <div style={{ marginLeft: 24, display: 'flex', flexDirection: 'column', width: 280 }}>
+              <Space direction="vertical" style={{ marginTop: 0 }}>
+                <Button 
+                  block 
+                  type={backendRunning ? 'default' : 'primary'}
+                  onClick={async () => {
+                    try {
+                      if (backendRunning) {
+                        antdMessage.info('Stopping AI backend...');
+                        await invoke('stop_backend');
+                        setBackendRunning(false);
+                        antdMessage.success('AI backend stopped');
+                      } else {
+                        antdMessage.info('Starting AI backend...');
+                        await invoke('start_backend');
+                        setBackendRunning(true);
+                        antdMessage.success('AI backend started');
+                      }
+                    } catch (error) {
+                      antdMessage.error(`Failed: ${error}`);
+                    }
+                  }}
+                >
+                  {backendRunning ? 'Stop Agent' : 'Start Agent'}
+                </Button>
+              </Space>
+              
+              <div style={{ marginTop: 16, padding: 12, background: '#fafafa', borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
+                  Session ID:
+                </div>
+                <div style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {sessionId || 'No active session'}
+                </div>
+                <div style={{ fontSize: 12, color: '#666', marginTop: 8 }}>
+                  Status: <span style={{ color: backendRunning ? '#52c41a' : '#ff4d4f' }}>
+                    {backendRunning ? 'Running' : 'Stopped'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </Content>
+
+          <Footer style={{ padding: '12px 24px', background: '#fff', marginTop: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', maxWidth: '800px', margin: '0 auto' }}>
+              <Input
+                placeholder="Type a message..."
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onPressEnter={sendMessage}
+                style={{ flex: 1, marginRight: 8 }}
+                disabled={!backendRunning || isLoading}
+              />
+              <Button 
+                type="primary" 
+                onClick={sendMessage}
+                loading={isLoading}
+                disabled={!backendRunning || !input.trim()}
+              >
+                Send
+              </Button>
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 8 }}>
+              <small>© 2026 AgenticAI • Powered by Tauri + React • {backendRunning ? 'AI Ready' : 'AI Offline'}</small>
+            </div>
+          </Footer>
+        </Layout>
+      </Layout>
     </Layout>
   );
 }
