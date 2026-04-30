@@ -54,7 +54,7 @@ User Input → Controller → Decision → Model/Tool → Aggregation → Output
 - [x]  Hotkey support
 - [x]  UI Chat page (main chat, start/stop agent, history view)
 - [x]  Summarization & smart tags (backend compression and tag extraction)
-- [ ]  File processing (.py, PDF, TXT) (pending)
+- [x]  File processing (.py, PDF, TXT) (pending)
 - [ ]  ChromaDB integration
 
 ## Phase 3: Advanced Features
