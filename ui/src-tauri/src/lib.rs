@@ -237,6 +237,16 @@ async fn backend_status(app_handle: tauri::AppHandle) -> Result<bool, String> {
     }
 }
 
+#[tauri::command]
+async fn get_all_sessions(app_handle: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let result = send_json_rpc(&app_handle, "get_sessions", json!({}), None).await?;
+    
+    result.get("sessions")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.clone())
+        .ok_or_else(|| "No sessions in result".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -292,6 +302,7 @@ pub fn run() {
             get_chat_history,
             new_session,
             backend_status,
+            get_all_sessions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

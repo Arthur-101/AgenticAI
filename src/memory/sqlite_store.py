@@ -574,6 +574,34 @@ class SQLiteMemoryStore:
         
         return messages
     
+    def get_all_sessions(self) -> List[Dict[str, Any]]:
+        """Get all chat sessions with their first message as title."""
+        cursor = self.connection.cursor()
+        
+        # We want to group by session_id and get the earliest user message as the title
+        cursor.execute("""
+        SELECT session_id, MIN(created_at) as created_at, content_raw as title
+        FROM messages
+        WHERE role = 'user'
+        GROUP BY session_id
+        ORDER BY created_at DESC
+        """)
+        
+        rows = cursor.fetchall()
+        sessions = []
+        for row in rows:
+            title = row["title"]
+            if len(title) > 40:
+                title = title[:37] + "..."
+                
+            sessions.append({
+                "session_id": row["session_id"],
+                "title": title,
+                "created_at": row["created_at"]
+            })
+            
+        return sessions
+    
     def get_messages_by_tags(
         self,
         tags: List[str],

@@ -43,6 +43,8 @@ class EmbeddedBackend:
                 return self._handle_history(params)
             elif method == "new_session":
                 return self._handle_new_session()
+            elif method == "get_sessions":
+                return self._handle_get_sessions()
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -125,6 +127,17 @@ class EmbeddedBackend:
             "id": None
         }
 
+    def _handle_get_sessions(self) -> Dict[str, Any]:
+        """Handle request to get all sessions."""
+        sessions = self.memory.get_all_sessions()
+        
+        return {
+            "jsonrpc": "2.0",
+            "result": {
+                "sessions": sessions
+            },
+            "id": None
+        }
 
 async def main_async():
     """Async main entry point."""
