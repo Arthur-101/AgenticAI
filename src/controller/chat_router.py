@@ -8,6 +8,7 @@ from datetime import datetime
 
 from src.models.openrouter_client import OpenRouterClient, Message, ModelType
 from src.memory.sqlite_store import SQLiteMemoryStore, SessionManager
+from src.memory.vector_store import VectorMemoryStore
 from src.utils.config import config
 from src.processors.file_processor import FileProcessor
 
@@ -24,8 +25,9 @@ class ChatContext:
 class ChatRouter:
     """Routes chat requests with smart context assembly."""
     
-    def __init__(self, memory_store: Optional[SQLiteMemoryStore] = None):
+    def __init__(self, memory_store: Optional[SQLiteMemoryStore] = None, vector_store: Optional[VectorMemoryStore] = None):
         self.memory_store = memory_store or SQLiteMemoryStore()
+        self.vector_store = vector_store or VectorMemoryStore()
         self.session_manager = SessionManager(self.memory_store)
         self.client = None
         self.current_session_id = self.session_manager.current_session_id
@@ -56,6 +58,14 @@ class ChatRouter:
             content_raw=user_message,
             model_id=None,
             tokens_used=0,
+        )
+        
+        # Add to vector store
+        self.vector_store.add_message(
+            session_id=effective_session_id,
+            role="user",
+            content=user_message,
+            message_id=user_msg_id
         )
         
         # Extract tags from user message
@@ -99,6 +109,14 @@ class ChatRouter:
             content_raw=assistant_response["content"],
             model_id=assistant_response["model_id"],
             tokens_used=assistant_response.get("tokens_used", 0),
+        )
+        
+        # Add to vector store
+        self.vector_store.add_message(
+            session_id=effective_session_id,
+            role="assistant",
+            content=assistant_response["content"],
+            message_id=assistant_msg_id
         )
         
         # Summarize both messages asynchronously
@@ -205,6 +223,19 @@ class ChatRouter:
         
         # Add current user message
         context_messages.append(Message(role="user", content=user_message))
+        
+        # Search vector store for similar past context
+        similar_past = self.vector_store.search_similar_messages(query=user_message, limit=3)
+        if similar_past:
+            vector_context_texts = []
+            for item in similar_past:
+                # Ensure we don't duplicate the current exact message
+                if item["content"] != user_message:
+                    vector_context_texts.append(f"[{item['metadata'].get('role', 'unknown')}]: {item['content']}")
+            
+            if vector_context_texts:
+                vector_context = "\n".join(vector_context_texts)
+                context_messages.insert(-1, Message(role="system", content=f"Relevant past conversation snippets retrieved from memory:\n{vector_context}"))
         
         return ChatContext(
             system_prompt=system_prompt,

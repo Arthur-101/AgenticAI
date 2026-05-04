@@ -55,6 +55,7 @@ User Input → Controller → Decision → Model/Tool → Aggregation → Output
 - [x]  UI Chat page (main chat, start/stop agent, history view)
 - [x]  Multiple chat sessions and sidebar navigation
 - [x]  Summarization & smart tags (backend compression and tag extraction)
+- [x]  ChromaDB integration (Vector DB for RAG memory)
 - [x]  File processing (.py, PDF, TXT) (pending)
 - [ ]  ChromaDB integration
 

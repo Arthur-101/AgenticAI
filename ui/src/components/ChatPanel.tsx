@@ -126,7 +126,7 @@ export default function ChatPanel() {
       </Header>
 
       <Layout hasSider style={{ background: 'inherit' }}>
-        <Sider width={250} style={{ background: '#fff', borderRight: '1px solid #f0f0f0', overflowY: 'auto' }}>
+        <Sider width={250} collapsible theme="light" collapsedWidth={0} style={{ background: '#fff', borderRight: '1px solid #f0f0f0', overflowY: 'auto' }}>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <Button 
               type="primary" 
@@ -181,7 +181,7 @@ export default function ChatPanel() {
 
         <Layout style={{ background: 'inherit' }}>
           <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 24, overflow: 'hidden' }}>
-            <Card className="glass-card" style={{ flex: 1, maxWidth: '800px', height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column', background: 'inherit' }}>
+            <div className="glass-card" style={{ flex: 1, maxWidth: '800px', height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column', background: 'inherit', padding: '16px', boxSizing: 'border-box' }}>
               <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px' }}>
                 <List
                   itemLayout="vertical"
@@ -247,10 +247,12 @@ export default function ChatPanel() {
                   )}
                 />
               </div>
-            </Card>
+            </div>
+          </Content>
 
-            <div style={{ marginLeft: 24, display: 'flex', flexDirection: 'column', width: 280 }}>
-              <Space direction="vertical" style={{ marginTop: 0 }}>
+          <Sider width={280} collapsible reverseArrow collapsedWidth={0} theme="light" style={{ background: '#fff', borderLeft: '1px solid #f0f0f0' }}>
+            <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column' }}>
+              <Space direction="vertical" style={{ width: '100%' }}>
                 <Button 
                   block 
                   type={backendRunning ? 'default' : 'primary'}
