@@ -179,8 +179,9 @@ export default function ChatPanel() {
           </div>
         </Sider>
 
-        <Layout style={{ background: 'inherit' }}>
-          <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 24, overflow: 'hidden' }}>
+        <Layout style={{ background: 'inherit', display: 'flex', flexDirection: 'column' }}>
+          <Layout hasSider style={{ background: 'inherit', flex: 1, overflow: 'hidden' }}>
+            <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 24, overflow: 'hidden', height: '100%' }}>
             <div className="glass-card" style={{ flex: 1, maxWidth: '800px', height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column', background: 'inherit', padding: '16px', boxSizing: 'border-box' }}>
               <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px' }}>
                 <List
@@ -292,7 +293,8 @@ export default function ChatPanel() {
                 </div>
               </div>
             </div>
-          </Content>
+          </Sider>
+          </Layout>
 
           <Footer style={{ padding: '12px 24px', background: '#fff', marginTop: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', maxWidth: '800px', margin: '0 auto' }}>
