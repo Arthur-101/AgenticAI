@@ -1,5 +1,5 @@
 import { Layout, Card, List, Input, Button, Space, message as antdMessage } from 'antd';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -15,6 +15,15 @@ export default function ChatPanel() {
   const [sessionId, setSessionId] = useState<string>('');
   const [backendRunning, setBackendRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   // Initialize on component mount
   useEffect(() => {
@@ -182,7 +191,7 @@ export default function ChatPanel() {
         <Layout style={{ background: 'inherit', display: 'flex', flexDirection: 'column' }}>
           <Layout hasSider style={{ background: 'inherit', flex: 1, overflow: 'hidden' }}>
             <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 24, overflow: 'hidden', height: '100%' }}>
-            <div className="glass-card" style={{ flex: 1, maxWidth: '800px', height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column', background: 'inherit', padding: '16px', boxSizing: 'border-box' }}>
+            <div className="glass-card" style={{ flex: 1, maxWidth: '800px', height: '100%', display: 'flex', flexDirection: 'column', background: 'inherit', padding: '16px', boxSizing: 'border-box' }}>
               <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px' }}>
                 <List
                   itemLayout="vertical"
@@ -247,6 +256,7 @@ export default function ChatPanel() {
                     </List.Item>
                   )}
                 />
+                <div ref={messagesEndRef} />
               </div>
             </div>
           </Content>
