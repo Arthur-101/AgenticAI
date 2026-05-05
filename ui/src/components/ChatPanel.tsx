@@ -1,7 +1,8 @@
 import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography } from 'antd';
-import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
+import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined } from '@ant-design/icons';
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -460,6 +461,29 @@ export default function ChatPanel() {
 
           <Footer style={{ padding: '12px 24px', background: '#fff', marginTop: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', maxWidth: '800px', margin: '0 auto' }}>
+              <Button
+                icon={<PlusOutlined />}
+                title="Add file"
+                onClick={async () => {
+                  try {
+                    const selected = await open({
+                      multiple: true,
+                    });
+                    if (selected) {
+                      if (Array.isArray(selected)) {
+                        const paths = selected.map(p => `"${p}"`).join(' ');
+                        setInput(prev => prev + (prev.trim() ? ' ' : '') + paths + ' ');
+                      } else {
+                        setInput(prev => prev + (prev.trim() ? ' ' : '') + `"${selected}"` + ' ');
+                      }
+                    }
+                  } catch (e) {
+                    console.error('File selection error:', e);
+                  }
+                }}
+                style={{ marginRight: 8 }}
+                disabled={!backendRunning || isLoading}
+              />
               <Input
                 placeholder="Type a message..."
                 value={input}

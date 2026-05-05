@@ -68,7 +68,7 @@ class VectorMemoryStore:
         metadatas = [{"file_path": file_path, "chunk": i} for i in range(len(chunks))]
         
         try:
-            self.document_collection.add(
+            self.document_collection.upsert(
                 documents=chunks,
                 metadatas=metadatas,
                 ids=ids

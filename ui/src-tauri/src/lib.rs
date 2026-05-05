@@ -314,6 +314,7 @@ async fn delete_memory(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(BackendState {
             process: AsyncMutex::new(None),
             stdin: AsyncMutex::new(None),

@@ -56,12 +56,11 @@ User Input → Controller → Decision → Model/Tool → Aggregation → Output
 - [x]  Multiple chat sessions and sidebar navigation
 - [x]  Summarization & smart tags (backend compression and tag extraction)
 - [x]  ChromaDB integration (Vector DB for RAG memory)
-- [x]  File processing (.py, PDF, TXT) (pending)
-- [ ]  ChromaDB integration
+- [ ]  Advanced Document RAG (File Chunking & Vector Search)
 
 ## Phase 3: Advanced Features
 
-- [ ]  Tool execution framework
+- [ ]  Tool Execution Framework (MCP-style)
 - [ ]  Advanced memory (Redis)
 - [ ]  OCR/image processing
 - [ ]  Audio/video transcription
@@ -121,13 +120,12 @@ data/
 
 ## Next Steps
 
-1. Test with actual OpenRouter API key
-2. Add file processors (.py, PDF, TXT)
-3. Implement ChromaDB for RAG
-4. Add Windows system tray integration with hotkeys
-5. Implement advanced memory with Redis for multi-process sync
-6. Add OCR/image processing capabilities
-7.  Add audio/video transcription support
+1. Implement Advanced Document RAG (File Chunking & Vector Search)
+2. Implement Tool Execution Framework (MCP-style)
+3. Add Windows system tray integration with hotkeys
+4. Implement advanced memory with Redis for multi-process sync
+5. Add OCR/image processing capabilities
+6. Add audio/video transcription support
 
 ## Notes
 

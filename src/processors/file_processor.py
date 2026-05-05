@@ -22,7 +22,7 @@ class FileProcessor:
         ext = ext.lower()
         
         # Text based files
-        if ext in ['.txt', '.py', '.md', '.csv', '.json', '.js', '.ts', '.tsx', '.html', '.css', '.rs']:
+        if ext in ['.txt', '.py', '.md', '.csv', '.json', '.js', '.ts', '.tsx', '.html', '.css', '.rs', '.log']:
             return FileProcessor._process_text_file(file_path)
         # PDF files
         elif ext == '.pdf':

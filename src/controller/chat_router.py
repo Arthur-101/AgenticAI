@@ -139,28 +139,50 @@ class ChatRouter:
         checked_paths = set()
         
         # Regex to find absolute/relative paths and filenames with specific extensions
-        path_pattern = r'(?:/[a-zA-Z0-9_.-]+)+/[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+'
-        file_pattern = r'[a-zA-Z0-9_.-]+\.(?:py|txt|pdf|md|csv|json|js|ts|tsx|html|css|rs)'
+        quoted_paths = re.findall(r'"([^"]+\.[a-zA-Z0-9]+)"', user_message)
+        path_pattern = r'(?:[a-zA-Z]:[\\/]|/)(?:[\w.-]+[\\/])*[\w.-]+\.[a-zA-Z0-9]+'
+        unquoted_paths = re.findall(path_pattern, user_message)
+        file_pattern = r'[\w.-]+\.(?:py|txt|pdf|md|csv|json|js|ts|tsx|html|css|rs|log)'
         
-        potential_paths = re.findall(path_pattern, user_message) + re.findall(file_pattern, user_message)
+        potential_paths = quoted_paths + unquoted_paths + re.findall(file_pattern, user_message)
         
         for path_str in potential_paths:
             if path_str in checked_paths: continue
             checked_paths.add(path_str)
             try:
                 p = Path(path_str)
-                # Ensure it's a file and not too large (e.g. limit to 1MB to avoid blowing up context)
                 if p.exists() and p.is_file():
-                    if p.stat().st_size < 1024 * 1024:  # 1MB limit
+                    # For small files (< 4KB), we can just dump them in context
+                    if p.stat().st_size < 4096:
                         content = FileProcessor.process_file(str(p))
                         extracted_files_context.append(f"--- Contents of {path_str} ---\n{content}\n--- End of {path_str} ---")
+                    # For larger files (up to 10MB), we chunk and use RAG
+                    elif p.stat().st_size < 10 * 1024 * 1024:
+                        content = FileProcessor.process_file(str(p))
+                        # Index the document
+                        self.vector_store.add_document(str(p), content)
             except Exception:
                 pass
                 
         if extracted_files_context:
             context_messages.append(
-                Message(role="system", content="The user referenced the following files in their message:\n\n" + "\n\n".join(extracted_files_context))
+                Message(role="system", content="The user referenced the following small files in their message:\n\n" + "\n\n".join(extracted_files_context))
             )
+
+        # Search vector store for document chunks across all indexed files
+        similar_docs = self.vector_store.search_documents(query=user_message, limit=5)
+        if similar_docs:
+            doc_context_texts = []
+            for item in similar_docs:
+                filepath = item["metadata"].get("file_path", "Unknown File")
+                chunk_id = item["metadata"].get("chunk", "?")
+                doc_context_texts.append(f"--- From {filepath} (chunk {chunk_id}) ---\n{item['content']}")
+            
+            if doc_context_texts:
+                doc_context = "\n\n".join(doc_context_texts)
+                context_messages.append(
+                    Message(role="system", content=f"Relevant document snippets retrieved from the vector database based on the user's query:\n{doc_context}\n\nSYSTEM INSTRUCTION: You MUST use these retrieved document snippets if they are relevant to answer the user.")
+                )
         
         recent_summaries = []
         if use_summaries:
@@ -222,7 +244,7 @@ class ChatRouter:
             
             if vector_context_texts:
                 vector_context = "\n".join(vector_context_texts)
-                context_messages.insert(-1, Message(role="system", content=f"Relevant factual memories about the user/project retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: You MUST use these retrieved memories to answer the user. Do NOT claim that you lack memory or cannot retain personal details across sessions, as these snippets are your explicit memory."))
+                context_messages.insert(-1, Message(role="system", content=f"Relevant factual memories about the user/project retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Use these retrieved memories ONLY if they are directly relevant to the user's current request. Do not mention them if they are unrelated."))
         
         return ChatContext(
             system_prompt=system_prompt,
