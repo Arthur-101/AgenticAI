@@ -235,7 +235,7 @@ class ChatRouter:
             
             if vector_context_texts:
                 vector_context = "\n".join(vector_context_texts)
-                context_messages.insert(-1, Message(role="system", content=f"Relevant past conversation snippets retrieved from memory:\n{vector_context}"))
+                context_messages.insert(-1, Message(role="system", content=f"Relevant past conversation snippets retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: You MUST use these retrieved memories to answer the user. Do NOT claim that you lack memory or cannot retain personal details across sessions, as these snippets are your explicit memory."))
         
         return ChatContext(
             system_prompt=system_prompt,
