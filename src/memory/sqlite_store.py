@@ -120,6 +120,16 @@ class SQLiteMemoryStore:
         )
         """)
         
+        # Create user_memories table for factual knowledge
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_memories (
+            id TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            tags_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
@@ -748,6 +758,56 @@ class SQLiteMemoryStore:
         
         return summaries
     
+    def save_user_memory(self, content: str, tags: List[str] = None) -> str:
+        """Save an extracted factual memory."""
+        memory_id = str(uuid.uuid4())
+        self._execute(
+            """
+            INSERT INTO user_memories (id, content, tags_json)
+            VALUES (?, ?, ?)
+            """,
+            (memory_id, content, json.dumps(tags or [])),
+        )
+        return memory_id
+
+    def update_user_memory(self, memory_id: str, new_content: str) -> bool:
+        """Update the content of a user memory."""
+        try:
+            self._execute("UPDATE user_memories SET content = ? WHERE id = ?", (new_content, memory_id))
+            return True
+        except Exception as e:
+            print(f"Error updating user memory: {e}")
+            return False
+
+    def delete_user_memory(self, memory_id: str) -> bool:
+        """Delete a user memory."""
+        try:
+            self._execute("DELETE FROM user_memories WHERE id = ?", (memory_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting user memory: {e}")
+            return False
+
+    def get_all_user_memories(self) -> List[Dict[str, Any]]:
+        """Get all user memories."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+        SELECT id, content, tags_json, created_at
+        FROM user_memories
+        ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        
+        memories = []
+        for row in rows:
+            memories.append({
+                "id": row["id"],
+                "content": row["content"],
+                "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
+                "created_at": row["created_at"],
+            })
+        return memories
+
     def get_database_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
         cursor = self.connection.cursor()

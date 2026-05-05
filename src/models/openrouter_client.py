@@ -373,7 +373,58 @@ class OpenRouterClient:
         if len(content) > target_chars:
             return content[:target_chars] + "..."
         return content
-    
+
+    async def extract_memory_facts(
+        self,
+        content: str,
+        model_id: str = "openai/gpt-oss-120b",
+    ) -> List[str]:
+        """Extract factual memories from a chat conversation."""
+        try:
+            messages = [
+                Message(role="system", content="Did the user mention any new facts about themselves, their preferences, or their project details in the following text? If yes, extract them as concise bullet points. If no, return the string 'NO_FACTS'."),
+                Message(role="user", content=f"Text to extract facts from:\n\n{content}"),
+            ]
+            
+            request = ChatRequest(
+                model=model_id,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=300,
+                stream=False,
+            )
+            
+            response = await self.client.post(
+                f"{self.base_url}/chat/completions",
+                json=request.dict(exclude_none=True),
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if "choices" in data and data["choices"]:
+                choice = data["choices"][0]
+                if "message" in choice and "content" in choice["message"]:
+                    content_result = choice["message"]["content"].strip()
+                    if content_result == "NO_FACTS" or "NO_FACTS" in content_result:
+                        return []
+                    
+                    # Split bullet points
+                    facts = []
+                    for line in content_result.split("\n"):
+                        line = line.strip()
+                        if line.startswith("-") or line.startswith("*"):
+                            facts.append(line.lstrip("-* "))
+                        elif line and not line.lower().startswith("here"):
+                            facts.append(line)
+                    return facts
+            
+            return []
+            
+        except Exception as e:
+            print(f"Error in extracting memory facts: {e}")
+            return []
+
     async def extract_tags(
         self,
         content: str,

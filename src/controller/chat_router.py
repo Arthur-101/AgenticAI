@@ -60,14 +60,6 @@ class ChatRouter:
             tokens_used=0,
         )
         
-        # Add to vector store
-        self.vector_store.add_message(
-            session_id=effective_session_id,
-            role="user",
-            content=user_message,
-            message_id=user_msg_id
-        )
-        
         # Extract tags from user message
         tags = []
         if use_tags:
@@ -111,17 +103,12 @@ class ChatRouter:
             tokens_used=assistant_response.get("tokens_used", 0),
         )
         
-        # Add to vector store
-        self.vector_store.add_message(
-            session_id=effective_session_id,
-            role="assistant",
-            content=assistant_response["content"],
-            message_id=assistant_msg_id
-        )
-        
         # Summarize both messages asynchronously
         if use_summaries:
             asyncio.create_task(self._summarize_messages(user_msg_id, assistant_msg_id))
+
+        # Extract factual memory asynchronously
+        asyncio.create_task(self._extract_and_save_facts(user_message, tags))
         
         return {
             "response": assistant_response["content"],
@@ -225,17 +212,17 @@ class ChatRouter:
         context_messages.append(Message(role="user", content=user_message))
         
         # Search vector store for similar past context
-        similar_past = self.vector_store.search_similar_messages(query=user_message, limit=3)
+        similar_past = self.vector_store.search_user_memories(query=user_message, limit=3)
         if similar_past:
             vector_context_texts = []
             for item in similar_past:
                 # Ensure we don't duplicate the current exact message
                 if item["content"] != user_message:
-                    vector_context_texts.append(f"[{item['metadata'].get('role', 'unknown')}]: {item['content']}")
+                    vector_context_texts.append(f"- {item['content']}")
             
             if vector_context_texts:
                 vector_context = "\n".join(vector_context_texts)
-                context_messages.insert(-1, Message(role="system", content=f"Relevant past conversation snippets retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: You MUST use these retrieved memories to answer the user. Do NOT claim that you lack memory or cannot retain personal details across sessions, as these snippets are your explicit memory."))
+                context_messages.insert(-1, Message(role="system", content=f"Relevant factual memories about the user/project retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: You MUST use these retrieved memories to answer the user. Do NOT claim that you lack memory or cannot retain personal details across sessions, as these snippets are your explicit memory."))
         
         return ChatContext(
             system_prompt=system_prompt,
@@ -355,6 +342,18 @@ class ChatRouter:
         except Exception as e:
             print(f"Error summarizing messages: {e}")
     
+    async def _extract_and_save_facts(self, user_message: str, tags: List[str]):
+        """Extract factual memories and save them."""
+        try:
+            facts = await self.client.extract_memory_facts(user_message)
+            for fact in facts:
+                # Save to sqlite user_memories
+                memory_id = self.memory_store.save_user_memory(fact, tags)
+                # Save to vector store user_memories
+                self.vector_store.add_user_memory(memory_id, fact)
+        except Exception as e:
+            print(f"Error extracting and saving facts: {e}")
+
     def get_session_history(
         self,
         session_id: Optional[str] = None,

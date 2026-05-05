@@ -135,6 +135,16 @@ export default function ChatPanel() {
     }
   };
 
+  const handleDeleteMemory = async (id: string) => {
+    try {
+      await invoke('delete_memory', { memoryId: id });
+      antdMessage.success('Memory deleted');
+      await loadMemories();
+    } catch (error) {
+      antdMessage.error(`Failed to delete memory: ${error}`);
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
     
@@ -208,7 +218,17 @@ export default function ChatPanel() {
                   }}
                 >
                   {editingMemoryId === item.id ? "Save" : "Edit"}
-                </Button>
+                </Button>,
+                <Popconfirm
+                  title="Delete this memory?"
+                  onConfirm={() => handleDeleteMemory(item.id)}
+                  okText="Yes"
+                  cancelText="No"
+                >
+                  <Button type="text" danger icon={<DeleteOutlined />}>
+                    Delete
+                  </Button>
+                </Popconfirm>
               ]}
             >
               <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>

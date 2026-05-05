@@ -51,6 +51,8 @@ class EmbeddedBackend:
                 return self._handle_get_all_memories()
             elif method == "update_memory":
                 return self._handle_update_memory(params)
+            elif method == "delete_memory":
+                return self._handle_delete_memory(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -155,7 +157,7 @@ class EmbeddedBackend:
         }
 
     def _handle_get_all_memories(self) -> Dict[str, Any]:
-        memories = self.memory.get_all_memories_with_tags()
+        memories = self.memory.get_all_user_memories()
         return {
             "jsonrpc": "2.0",
             "result": {"memories": memories},
@@ -165,7 +167,20 @@ class EmbeddedBackend:
     def _handle_update_memory(self, params: Dict[str, Any]) -> Dict[str, Any]:
         message_id = params.get("message_id")
         content = params.get("content")
-        success = self.memory.update_message_content(message_id, content)
+        success = self.memory.update_user_memory(message_id, content)
+        if success:
+            self.router.vector_store.update_user_memory(message_id, content)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": success},
+            "id": params.get("request_id")
+        }
+
+    def _handle_delete_memory(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        memory_id = params.get("memory_id")
+        success = self.memory.delete_user_memory(memory_id)
+        if success:
+            self.router.vector_store.delete_user_memory(memory_id)
         return {
             "jsonrpc": "2.0",
             "result": {"success": success},

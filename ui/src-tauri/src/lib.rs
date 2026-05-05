@@ -293,6 +293,23 @@ async fn update_memory(
         .ok_or_else(|| "No success flag in result".to_string())
 }
 
+#[tauri::command]
+async fn delete_memory(
+    app_handle: tauri::AppHandle,
+    memory_id: String
+) -> Result<bool, String> {
+    let params = json!({
+        "memory_id": memory_id,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    
+    let result = send_json_rpc(&app_handle, "delete_memory", params, None).await?;
+    
+    result.get("success")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| "No success flag in result".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -352,6 +369,7 @@ pub fn run() {
             delete_session,
             get_all_memories,
             update_memory,
+            delete_memory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

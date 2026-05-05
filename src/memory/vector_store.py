@@ -22,6 +22,10 @@ class VectorMemoryStore:
                 name="chat_history",
                 metadata={"hnsw:space": "cosine"}
             )
+            self.user_memories_collection = self.client.get_or_create_collection(
+                name="user_memories",
+                metadata={"hnsw:space": "cosine"}
+            )
             self.document_collection = self.client.get_or_create_collection(
                 name="documents",
                 metadata={"hnsw:space": "cosine"}
@@ -71,6 +75,62 @@ class VectorMemoryStore:
             )
         except Exception as e:
             logger.error(f"Error adding document to vector store: {e}")
+
+    def add_user_memory(self, memory_id: str, content: str):
+        """Add an extracted factual memory to the vector store."""
+        if not content or len(content.strip()) < 5:
+            return
+            
+        try:
+            self.user_memories_collection.add(
+                documents=[content],
+                metadatas=[{"type": "fact"}],
+                ids=[f"fact_{memory_id}"]
+            )
+        except Exception as e:
+            logger.error(f"Error adding user memory to vector store: {e}")
+
+    def update_user_memory(self, memory_id: str, content: str):
+        """Update an extracted factual memory in the vector store."""
+        try:
+            self.user_memories_collection.update(
+                documents=[content],
+                ids=[f"fact_{memory_id}"]
+            )
+        except Exception as e:
+            logger.error(f"Error updating user memory in vector store: {e}")
+
+    def delete_user_memory(self, memory_id: str):
+        """Delete an extracted factual memory from the vector store."""
+        try:
+            self.user_memories_collection.delete(
+                ids=[f"fact_{memory_id}"]
+            )
+        except Exception as e:
+            logger.error(f"Error deleting user memory in vector store: {e}")
+
+    def search_user_memories(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Search for relevant factual user memories."""
+        if not query or len(query.strip()) < 3:
+            return []
+            
+        try:
+            results = self.user_memories_collection.query(
+                query_texts=[query],
+                n_results=limit
+            )
+            
+            formatted_results = []
+            if results["documents"] and len(results["documents"]) > 0:
+                for i in range(len(results["documents"][0])):
+                    formatted_results.append({
+                        "content": results["documents"][0][i],
+                        "distance": results["distances"][0][i] if "distances" in results else None
+                    })
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Error searching user memories vector store: {e}")
+            return []
 
     def search_similar_messages(self, query: str, session_id: Optional[str] = None, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for similar past messages."""
