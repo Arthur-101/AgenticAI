@@ -265,14 +265,18 @@ class ChatRouter:
         # Use default chat model from config
         default_model = config.settings.default_chat_model
         model_map = {
+            "google/gemini-2.5-flash-lite": ModelType.GEMINI_FLASH,
             "gemini-2.5-flash-lite": ModelType.GEMINI_FLASH,
+            "qwen/qwen-2.5-32b-instruct": ModelType.QWEN,
             "qwen-2.5-32b-instruct": ModelType.QWEN,
+            "qwen/qwen3.5-flash-02-23": ModelType.QWEN,
+            "qwen3.5-flash-02-23": ModelType.QWEN,
             "mimo-v2-pro": ModelType.MIMO,
             "deepseek-v3.2": ModelType.DEEPSEEK,
             "gemini-3.1-pro": ModelType.GEMINI_PRO,
         }
         
-        return model_map.get(default_model, ModelType.GEMINI_FLASH)
+        return model_map.get(default_model, ModelType.QWEN)
     
     async def _get_assistant_response(
         self,
@@ -303,7 +307,11 @@ class ChatRouter:
             
             return {
                 "content": content,
-                "model_id": config.settings.model_gemini_flash if model_type == ModelType.GEMINI_FLASH else "",
+                "model_id": response.model if hasattr(response, 'model') and response.model else (
+                    config.settings.model_qwen if model_type == ModelType.QWEN else 
+                    config.settings.model_gemini_flash if model_type == ModelType.GEMINI_FLASH else 
+                    "unknown_model"
+                ),
                 "tokens_used": tokens_used,
             }
             

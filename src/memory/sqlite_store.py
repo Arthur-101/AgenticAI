@@ -601,6 +601,76 @@ class SQLiteMemoryStore:
             })
             
         return sessions
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a chat session and all its messages."""
+        try:
+            # Delete from messages table
+            self._execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            # Delete from conversations table just in case there's old format data
+            self._execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting session: {e}")
+            return False
+
+    def update_message_content(self, message_id: str, new_content: str) -> bool:
+        """Update the raw content of a message."""
+        try:
+            self._execute("UPDATE messages SET content_raw = ? WHERE id = ?", (new_content, message_id))
+            return True
+        except Exception as e:
+            print(f"Error updating message content: {e}")
+            return False
+
+    def get_all_memories_with_tags(self) -> List[Dict[str, Any]]:
+        """Get all messages that have non-empty tags."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+        SELECT id, session_id, role, content_raw, tags_json, created_at
+        FROM messages
+        WHERE tags_json IS NOT NULL AND tags_json != '[]'
+        ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        
+        memories = []
+        for row in rows:
+            memories.append({
+                "id": row["id"],
+                "session_id": row["session_id"],
+                "role": row["role"],
+                "content": row["content_raw"],
+                "tags": json.loads(row["tags_json"]),
+                "created_at": row["created_at"],
+            })
+        return memories
+        """Get all chat sessions with their first message as title."""
+        cursor = self.connection.cursor()
+        
+        # We want to group by session_id and get the earliest user message as the title
+        cursor.execute("""
+        SELECT session_id, MIN(created_at) as created_at, content_raw as title
+        FROM messages
+        WHERE role = 'user'
+        GROUP BY session_id
+        ORDER BY created_at DESC
+        """)
+        
+        rows = cursor.fetchall()
+        sessions = []
+        for row in rows:
+            title = row["title"]
+            if len(title) > 40:
+                title = title[:37] + "..."
+                
+            sessions.append({
+                "session_id": row["session_id"],
+                "title": title,
+                "created_at": row["created_at"]
+            })
+            
+        return sessions
     
     def get_messages_by_tags(
         self,

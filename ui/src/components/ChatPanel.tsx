@@ -1,4 +1,5 @@
-import { Layout, Card, List, Input, Button, Space, message as antdMessage } from 'antd';
+import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography } from 'antd';
+import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
@@ -15,6 +16,10 @@ export default function ChatPanel() {
   const [sessionId, setSessionId] = useState<string>('');
   const [backendRunning, setBackendRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [memories, setMemories] = useState<Array<{id: string, role: string, content: string, tags: string[], created_at: string}>>([]);
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -94,6 +99,42 @@ export default function ChatPanel() {
     }
   };
 
+  const loadMemories = async () => {
+    try {
+      if (!backendRunning) return;
+      const memoryList = await invoke<any[]>('get_all_memories');
+      setMemories(memoryList);
+    } catch (error) {
+      console.error('Failed to load memories:', error);
+    }
+  };
+
+  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await invoke('delete_session', { sessionId: id });
+      antdMessage.success('Session deleted');
+      if (sessionId === id) {
+        setSessionId('');
+        setMessages([]);
+      }
+      await loadSessions();
+    } catch (error) {
+      antdMessage.error(`Failed to delete session: ${error}`);
+    }
+  };
+
+  const handleUpdateMemory = async (id: string) => {
+    try {
+      await invoke('update_memory', { messageId: id, content: editingContent });
+      antdMessage.success('Memory updated');
+      setEditingMemoryId(null);
+      await loadMemories();
+    } catch (error) {
+      antdMessage.error(`Failed to update memory: ${error}`);
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
     
@@ -130,8 +171,81 @@ export default function ChatPanel() {
 
   return (
     <Layout style={{ height: '100vh', background: '#f0f2f5' }}>
-      <Header style={{ background: '#001529', color: '#fff', textAlign: 'center', padding: '16px 0' }}>
-        <h1 style={{ margin: 0 }}>AgenticAI Chat</h1>
+      <Modal
+        title="Settings & Memory"
+        open={isSettingsOpen}
+        onCancel={() => {
+          setIsSettingsOpen(false);
+          setEditingMemoryId(null);
+        }}
+        footer={null}
+        width={800}
+        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }}
+      >
+        <Typography.Title level={4}>Memory Management</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          These are the memories the AI has saved. You can edit them to correct or update what the AI knows about you.
+        </Typography.Paragraph>
+        
+        <List
+          itemLayout="vertical"
+          dataSource={memories}
+          locale={{ emptyText: "No specific memories have been tagged yet." }}
+          renderItem={item => (
+            <List.Item
+              style={{ background: '#fafafa', borderRadius: '8px', padding: '12px', marginBottom: '12px', border: '1px solid #f0f0f0' }}
+              actions={[
+                <Button 
+                  type="text" 
+                  icon={editingMemoryId === item.id ? <SaveOutlined /> : <EditOutlined />} 
+                  onClick={() => {
+                    if (editingMemoryId === item.id) {
+                      handleUpdateMemory(item.id);
+                    } else {
+                      setEditingMemoryId(item.id);
+                      setEditingContent(item.content);
+                    }
+                  }}
+                >
+                  {editingMemoryId === item.id ? "Save" : "Edit"}
+                </Button>
+              ]}
+            >
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                {item.tags.map(tag => (
+                  <span key={tag} style={{ background: '#e6f7ff', color: '#1890ff', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', border: '1px solid #91d5ff' }}>
+                    {tag}
+                  </span>
+                ))}
+                <span style={{ fontSize: '12px', color: '#999', marginLeft: 'auto' }}>
+                  {new Date(item.created_at).toLocaleString()}
+                </span>
+              </div>
+              
+              {editingMemoryId === item.id ? (
+                <Input.TextArea 
+                  value={editingContent} 
+                  onChange={e => setEditingContent(e.target.value)} 
+                  autoSize={{ minRows: 2, maxRows: 6 }}
+                />
+              ) : (
+                <div style={{ whiteSpace: 'pre-wrap' }}>{item.content}</div>
+              )}
+            </List.Item>
+          )}
+        />
+      </Modal>
+
+      <Header style={{ background: '#001529', color: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ margin: 0, textAlign: 'center', flex: 1 }}>AgenticAI Chat</h1>
+        <Button 
+          type="text" 
+          icon={<SettingOutlined style={{ fontSize: '20px', color: '#fff' }} />} 
+          onClick={async () => {
+            setIsSettingsOpen(true);
+            await loadMemories();
+          }}
+        />
       </Header>
 
       <Layout hasSider style={{ background: 'inherit' }}>
@@ -175,13 +289,31 @@ export default function ChatPanel() {
                     transition: 'all 0.2s',
                     marginBottom: '4px',
                     fontSize: '14px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
                   }}
                   title={item.title}
                 >
-                  {item.title || 'Empty Chat'}
+                  <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                    {item.title || 'Empty Chat'}
+                  </div>
+                  <Popconfirm
+                    title="Delete session?"
+                    onConfirm={(e) => handleDeleteSession(item.session_id, e as React.MouseEvent)}
+                    onCancel={(e) => e?.stopPropagation()}
+                    okText="Yes"
+                    cancelText="No"
+                  >
+                    <Button 
+                      type="text" 
+                      danger 
+                      icon={<DeleteOutlined />} 
+                      size="small" 
+                      onClick={(e) => e.stopPropagation()} 
+                      style={{ opacity: item.session_id === sessionId ? 1 : 0.6 }}
+                    />
+                  </Popconfirm>
                 </div>
               )}
             />

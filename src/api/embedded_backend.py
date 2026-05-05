@@ -45,6 +45,12 @@ class EmbeddedBackend:
                 return self._handle_new_session()
             elif method == "get_sessions":
                 return self._handle_get_sessions()
+            elif method == "delete_session":
+                return self._handle_delete_session(params)
+            elif method == "get_all_memories":
+                return self._handle_get_all_memories()
+            elif method == "update_memory":
+                return self._handle_update_memory(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -137,6 +143,33 @@ class EmbeddedBackend:
                 "sessions": sessions
             },
             "id": None
+        }
+
+    def _handle_delete_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = params.get("session_id")
+        success = self.memory.delete_session(session_id)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": success},
+            "id": params.get("request_id")
+        }
+
+    def _handle_get_all_memories(self) -> Dict[str, Any]:
+        memories = self.memory.get_all_memories_with_tags()
+        return {
+            "jsonrpc": "2.0",
+            "result": {"memories": memories},
+            "id": None
+        }
+
+    def _handle_update_memory(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        message_id = params.get("message_id")
+        content = params.get("content")
+        success = self.memory.update_message_content(message_id, content)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": success},
+            "id": params.get("request_id")
         }
 
 async def main_async():

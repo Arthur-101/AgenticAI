@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # ── Model configuration ───────────────────────────────────
-    model_qwen: str = "qwen/qwen-2.5-32b-instruct"
+    model_qwen: str = "qwen/qwen3.5-flash-02-23"
     model_gemini_flash: str = "google/gemini-2.5-flash-lite"
     model_mimo: str = "mimo/mimo-v2-pro"
     model_deepseek: str = "deepseek/deepseek-v3.2"
@@ -63,11 +63,11 @@ class Settings(BaseSettings):
         "coding": "deepseek-v3.2",
         "complex_reasoning": "mimo-v2-pro",
         "multimodal": "gemini-3.1-pro",
-        "default": "qwen-2.5-32b-instruct",
+        "default": "qwen3.5-flash-02-23",
     }
     
     # ── Chat enhancements ─────────────────────────────────────
-    default_chat_model: str = "gemini-2.5-flash-lite"
+    default_chat_model: str = "qwen/qwen3.5-flash-02-23"
     system_prompt: str = "You are Mira, a helpful AI assistant with multi-model capabilities and long-term memory. You can reason, code, analyze files, and use tools. IMPORTANT: You have a long-term memory system. When you are provided with 'Relevant past conversation snippets retrieved from memory', you MUST use them and acknowledge you remember them. NEVER claim you cannot remember past sessions or retain personal details, because your memory system explicitly provides this to you."
     summary_max_tokens: int = 400
     tag_extraction_model: Optional[str] = None

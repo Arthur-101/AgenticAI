@@ -247,6 +247,52 @@ async fn get_all_sessions(app_handle: tauri::AppHandle) -> Result<Vec<serde_json
         .ok_or_else(|| "No sessions in result".to_string())
 }
 
+#[tauri::command]
+async fn delete_session(
+    app_handle: tauri::AppHandle,
+    session_id: String
+) -> Result<bool, String> {
+    let params = json!({
+        "session_id": session_id,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    
+    let result = send_json_rpc(&app_handle, "delete_session", params, None).await?;
+    
+    result.get("success")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| "No success flag in result".to_string())
+}
+
+#[tauri::command]
+async fn get_all_memories(app_handle: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let result = send_json_rpc(&app_handle, "get_all_memories", json!({}), None).await?;
+    
+    result.get("memories")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.clone())
+        .ok_or_else(|| "No memories in result".to_string())
+}
+
+#[tauri::command]
+async fn update_memory(
+    app_handle: tauri::AppHandle,
+    message_id: String,
+    content: String
+) -> Result<bool, String> {
+    let params = json!({
+        "message_id": message_id,
+        "content": content,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    
+    let result = send_json_rpc(&app_handle, "update_memory", params, None).await?;
+    
+    result.get("success")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| "No success flag in result".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -303,6 +349,9 @@ pub fn run() {
             new_session,
             backend_status,
             get_all_sessions,
+            delete_session,
+            get_all_memories,
+            update_memory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
