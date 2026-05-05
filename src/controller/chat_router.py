@@ -146,11 +146,23 @@ class ChatRouter:
         
         potential_paths = quoted_paths + unquoted_paths + re.findall(file_pattern, user_message)
         
+        def convert_wsl_path(p: str) -> str:
+            import platform
+            if 'linux' in platform.system().lower() and 'microsoft' in platform.release().lower():
+                m = re.match(r'^([a-zA-Z]):[\\/](.*)$', p)
+                if m:
+                    drive = m.group(1).lower()
+                    rest = m.group(2).replace('\\', '/')
+                    return f"/mnt/{drive}/{rest}"
+            return p
+
         for path_str in potential_paths:
             if path_str in checked_paths: continue
             checked_paths.add(path_str)
+            
+            actual_path_str = convert_wsl_path(path_str)
             try:
-                p = Path(path_str)
+                p = Path(actual_path_str)
                 if p.exists() and p.is_file():
                     # For small files (< 4KB), we can just dump them in context
                     if p.stat().st_size < 4096:

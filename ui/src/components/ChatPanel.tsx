@@ -1,8 +1,8 @@
-import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography } from 'antd';
-import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined } from '@ant-design/icons';
+import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography, Upload } from 'antd';
+import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined, InboxOutlined } from '@ant-design/icons';
+const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -18,6 +18,7 @@ export default function ChatPanel() {
   const [backendRunning, setBackendRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [memories, setMemories] = useState<Array<{id: string, role: string, content: string, tags: string[], created_at: string}>>([]);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
@@ -257,6 +258,46 @@ export default function ChatPanel() {
         />
       </Modal>
 
+      <Modal
+        title="Upload Files"
+        open={isUploadOpen}
+        onCancel={() => setIsUploadOpen(false)}
+        footer={null}
+        width={600}
+      >
+        <Typography.Paragraph type="secondary">
+          Drag files here or click to browse. The path will be inserted into your message.
+        </Typography.Paragraph>
+        <Dragger
+          name="file"
+          multiple
+          beforeUpload={(file) => {
+            const f = file as any;
+            // Electron/Tauri often injects 'path' property
+            const filePath = f.path || f.webkitRelativePath || f.name;
+            if (filePath) {
+              const formattedPath = filePath.includes(' ') ? `"${filePath}"` : filePath;
+              setInput(prev => prev + (prev.trim() ? ' ' : '') + formattedPath + ' ');
+              antdMessage.success(`${f.name} added to message`);
+            } else {
+              antdMessage.error("Could not retrieve file path.");
+            }
+            return false; // prevent default upload action
+          }}
+          onDrop={(e) => {
+            console.log('Dropped files', e.dataTransfer.files);
+          }}
+        >
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p className="ant-upload-text">Click or drag file to this area to upload</p>
+          <p className="ant-upload-hint">
+            Support for a single or bulk upload. Note that we only read text, PDF, and logs.
+          </p>
+        </Dragger>
+      </Modal>
+
       <Header style={{ background: '#001529', color: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 style={{ margin: 0, textAlign: 'center', flex: 1 }}>AgenticAI Chat</h1>
         <Button 
@@ -464,23 +505,7 @@ export default function ChatPanel() {
               <Button
                 icon={<PlusOutlined />}
                 title="Add file"
-                onClick={async () => {
-                  try {
-                    const selected = await open({
-                      multiple: true,
-                    });
-                    if (selected) {
-                      if (Array.isArray(selected)) {
-                        const paths = selected.map(p => `"${p}"`).join(' ');
-                        setInput(prev => prev + (prev.trim() ? ' ' : '') + paths + ' ');
-                      } else {
-                        setInput(prev => prev + (prev.trim() ? ' ' : '') + `"${selected}"` + ' ');
-                      }
-                    }
-                  } catch (e) {
-                    console.error('File selection error:', e);
-                  }
-                }}
+                onClick={() => setIsUploadOpen(true)}
                 style={{ marginRight: 8 }}
                 disabled={!backendRunning || isLoading}
               />
