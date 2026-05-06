@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from src.processors.file_processor import FileProcessor
 
 
@@ -268,20 +268,6 @@ class BasicTools:
             "message": "System information retrieved",
         }
     
-    def get_current_datetime(self) -> Dict[str, Any]:
-        """Get the current date and time."""
-        now = datetime.now()
-        return {
-            "success": True,
-            "result": {
-                "datetime": now.isoformat(),
-                "date": now.strftime("%Y-%m-%d"),
-                "time": now.strftime("%H:%M:%S"),
-                "weekday": now.strftime("%A"),
-            },
-            "message": "Current datetime retrieved",
-        }
-    
     def web_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """Search the web for a query."""
         try:
@@ -435,11 +421,6 @@ class BasicTools:
                 "parameters": {},
                 "returns": "System information dictionary",
             },
-            "get_current_datetime": {
-                "description": "Get current date, time, and weekday",
-                "parameters": {},
-                "returns": "Dictionary with datetime strings",
-            },
             "web_search": {
                 "description": "Search the web for a query to find recent or relevant information",
                 "parameters": {
@@ -495,7 +476,6 @@ class ToolManager:
             "execute_command": self.basic_tools.execute_command,
             "calculate": self.basic_tools.calculate,
             "get_system_info": self.basic_tools.get_system_info,
-            "get_current_datetime": self.basic_tools.get_current_datetime,
             "web_search": self.basic_tools.web_search,
             "fetch_webpage": self.basic_tools.fetch_webpage,
         }

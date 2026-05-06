@@ -188,32 +188,43 @@ class OpenRouterClient:
             tool_choice="auto" if tools else None,
         )
         
-        try:
-            print(f"🤖 Requesting completion from model: {model_id}...")
-            response = await self.client.post(
-                f"{self.base_url}/chat/completions",
-                json=request.dict(exclude_none=True),
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            # Track cost
-            if "usage" in data:
-                usage = data["usage"]
-                input_tokens = usage.get("prompt_tokens", 0)
-                output_tokens = usage.get("completion_tokens", 0)
-                print(f"✅ Response received from {model_id} (Tokens: {input_tokens} in, {output_tokens} out)")
-                config.track_cost(model_id, input_tokens, output_tokens)
-            
-            return ChatResponse(**data)
-            
-        except httpx.HTTPStatusError as e:
-            print(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            raise
-        except Exception as e:
-            print(f"Error in chat completion: {e}")
-            raise
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                print(f"🤖 Requesting completion from model: {model_id} (Attempt {attempt+1}/{max_retries+1})...")
+                response = await self.client.post(
+                    f"{self.base_url}/chat/completions",
+                    json=request.dict(exclude_none=True),
+                )
+                
+                # Check for rate limiting
+                if response.status_code == 429 and attempt < max_retries:
+                    print(f"⚠️ Rate limited (429). Retrying in 2 seconds...")
+                    await asyncio.sleep(2)
+                    continue
+                    
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                # Track cost
+                if "usage" in data:
+                    usage = data["usage"]
+                    input_tokens = usage.get("prompt_tokens", 0)
+                    output_tokens = usage.get("completion_tokens", 0)
+                    print(f"✅ Response received from {model_id} (Tokens: {input_tokens} in, {output_tokens} out)")
+                    config.track_cost(model_id, input_tokens, output_tokens)
+                
+                return ChatResponse(**data)
+                
+            except httpx.HTTPStatusError as e:
+                print(f"HTTP error: {e.response.status_code} - {e.response.text}")
+                if attempt == max_retries:
+                    raise
+            except Exception as e:
+                print(f"Error in chat completion: {e}")
+                if attempt == max_retries:
+                    raise
     
     async def chat_completion_stream(
         self,
