@@ -489,6 +489,19 @@ class ToolManager:
                 "message": f"Tool not found: {tool_name}",
                 "tool_name": tool_name,
             }
+            
+        # Convert WSL paths if needed before execution
+        import platform
+        import re
+        if 'linux' in platform.system().lower() and 'microsoft' in platform.release().lower():
+            for key in ['file_path', 'directory']:
+                if key in parameters and isinstance(parameters[key], str):
+                    p = parameters[key]
+                    m = re.match(r'^([a-zA-Z]):[\\/](.*)$', p)
+                    if m:
+                        drive = m.group(1).lower()
+                        rest = m.group(2).replace('\\', '/')
+                        parameters[key] = f"/mnt/{drive}/{rest}"
         
         try:
             tool_func = self.tool_registry[tool_name]

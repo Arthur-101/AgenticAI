@@ -135,8 +135,9 @@ class ChatRouter:
         system_prompt = config.settings.system_prompt
         
         # Add current datetime to system prompt
-        now = datetime.now()
-        system_prompt += f"\n\nCURRENT SYSTEM STATUS:\n- Current Date and Time: {now.strftime('%Y-%m-%d %H:%M:%S %A')}\n- Current Working Directory: {Path.cwd()}"
+        datetime_info = self.tool_manager.basic_tools.get_current_datetime()["result"]
+        date_str = datetime_info.get("datetime", datetime.now().strftime('%Y-%m-%d %H:%M:%S %A'))
+        system_prompt += f"\n\nCURRENT SYSTEM STATUS:\n- Current Date and Time: {date_str}\n- Current Working Directory: {Path.cwd()}"
         
         # Add system prompt
         context_messages.append(Message(role="system", content=system_prompt))
