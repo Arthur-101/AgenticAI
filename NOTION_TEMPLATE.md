@@ -60,7 +60,7 @@ User Input → Controller → Decision → Model/Tool → Aggregation → Output
 
 ## Phase 3: Advanced Features
 
-- [ ]  Tool Execution Framework (MCP-style)
+- [x]  Tool Execution Framework (MCP-style)
 - [ ]  Advanced memory (Redis)
 - [ ]  OCR/image processing
 - [ ]  Audio/video transcription
@@ -120,12 +120,10 @@ data/
 
 ## Next Steps
 
-1. Implement Advanced Document RAG (File Chunking & Vector Search)
-2. Implement Tool Execution Framework (MCP-style)
-3. Add Windows system tray integration with hotkeys
-4. Implement advanced memory with Redis for multi-process sync
-5. Add OCR/image processing capabilities
-6. Add audio/video transcription support
+1. Add Windows system tray integration with hotkeys
+2. Implement advanced memory with Redis for multi-process sync
+3. Add OCR/image processing capabilities
+4. Add audio/video transcription support
 
 ## Notes
 

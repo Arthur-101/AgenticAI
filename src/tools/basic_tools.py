@@ -6,6 +6,10 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
 import json
+from datetime import datetime
+import httpx
+from bs4 import BeautifulSoup
+from duckduckgo_search import DDGS
 from src.processors.file_processor import FileProcessor
 
 
@@ -264,6 +268,67 @@ class BasicTools:
             "message": "System information retrieved",
         }
     
+    def get_current_datetime(self) -> Dict[str, Any]:
+        """Get the current date and time."""
+        now = datetime.now()
+        return {
+            "success": True,
+            "result": {
+                "datetime": now.isoformat(),
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M:%S"),
+                "weekday": now.strftime("%A"),
+            },
+            "message": "Current datetime retrieved",
+        }
+    
+    def web_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """Search the web for a query."""
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=max_results))
+                return {
+                    "success": True,
+                    "result": results,
+                    "message": f"Found {len(results)} results for '{query}'",
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "result": None,
+                "message": f"Error performing web search: {e}",
+            }
+            
+    def fetch_webpage(self, url: str) -> Dict[str, Any]:
+        """Fetch and extract text from a webpage."""
+        try:
+            response = httpx.get(url, timeout=15.0, follow_redirects=True, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            # Remove script and style elements
+            for script in soup(["script", "style", "nav", "footer", "header"]):
+                script.decompose()
+            
+            text = soup.get_text(separator="\n", strip=True)
+            # Truncate if too long (e.g., 20000 chars roughly 5000 tokens)
+            if len(text) > 20000:
+                text = text[:20000] + "\n...[truncated]"
+                
+            return {
+                "success": True,
+                "result": text,
+                "message": f"Webpage fetched and parsed: {url}",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "result": None,
+                "message": f"Error fetching webpage: {e}",
+            }
+    
     def _has_permission(self, action: str, resource: str) -> bool:
         """Check if permission is granted for an action on a resource."""
         permission_key = f"{action}:{resource}"
@@ -370,6 +435,38 @@ class BasicTools:
                 "parameters": {},
                 "returns": "System information dictionary",
             },
+            "get_current_datetime": {
+                "description": "Get current date, time, and weekday",
+                "parameters": {},
+                "returns": "Dictionary with datetime strings",
+            },
+            "web_search": {
+                "description": "Search the web for a query to find recent or relevant information",
+                "parameters": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query string",
+                        "required": True,
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of search results to return (default: 5)",
+                        "required": False,
+                    }
+                },
+                "returns": "List of search result dictionaries with title, href, and body",
+            },
+            "fetch_webpage": {
+                "description": "Fetch and extract text content from a webpage URL",
+                "parameters": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL of the webpage to fetch",
+                        "required": True,
+                    }
+                },
+                "returns": "Extracted text content of the webpage",
+            },
         }
         
         return {
@@ -384,7 +481,8 @@ class ToolManager:
     """Manages tool execution and coordination."""
     
     def __init__(self):
-        self.basic_tools = BasicTools()
+        # Disable permission prompts for the backend daemon to prevent hanging
+        self.basic_tools = BasicTools(require_permission=False)
         self.tool_registry = self._register_tools()
     
     def _register_tools(self) -> Dict[str, Any]:
@@ -397,6 +495,9 @@ class ToolManager:
             "execute_command": self.basic_tools.execute_command,
             "calculate": self.basic_tools.calculate,
             "get_system_info": self.basic_tools.get_system_info,
+            "get_current_datetime": self.basic_tools.get_current_datetime,
+            "web_search": self.basic_tools.web_search,
+            "fetch_webpage": self.basic_tools.fetch_webpage,
         }
     
     def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
@@ -443,3 +544,36 @@ class ToolManager:
     def list_tools(self) -> Dict[str, Any]:
         """List all available tools."""
         return self.basic_tools.get_available_tools()
+
+    def get_openai_tools_schema(self) -> list:
+        """Get tools in OpenAI's JSON schema format."""
+        schema_list = []
+        tools_info = self.basic_tools.get_available_tools()
+        if not tools_info["success"]:
+            return []
+            
+        for tool_name, tool_def in tools_info["result"].items():
+            parameters = {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+            
+            for param_name, param_def in tool_def.get("parameters", {}).items():
+                parameters["properties"][param_name] = {
+                    "type": param_def.get("type", "string"),
+                    "description": param_def.get("description", "")
+                }
+                if param_def.get("required", False):
+                    parameters["required"].append(param_name)
+                    
+            schema_list.append({
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": tool_def.get("description", ""),
+                    "parameters": parameters
+                }
+            })
+            
+        return schema_list

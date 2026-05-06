@@ -11,6 +11,8 @@ from src.memory.sqlite_store import SQLiteMemoryStore, SessionManager
 from src.memory.vector_store import VectorMemoryStore
 from src.utils.config import config
 from src.processors.file_processor import FileProcessor
+from src.tools.basic_tools import ToolManager
+import json
 
 
 @dataclass
@@ -29,6 +31,7 @@ class ChatRouter:
         self.memory_store = memory_store or SQLiteMemoryStore()
         self.vector_store = vector_store or VectorMemoryStore()
         self.session_manager = SessionManager(self.memory_store)
+        self.tool_manager = ToolManager()
         self.client = None
         self.current_session_id = self.session_manager.current_session_id
     
@@ -304,45 +307,112 @@ class ChatRouter:
         context: ChatContext,
         model_type: ModelType,
     ) -> Dict[str, Any]:
-        """Get assistant response from OpenRouter."""
-        try:
-            response = await self.client.chat_completion(
-                messages=context.assembled_messages,
-                model_type=model_type,
-            )
-            
-            # Extract response content
-            if response.choices and len(response.choices) > 0:
-                choice = response.choices[0]
-                if "message" in choice and "content" in choice["message"]:
-                    content = choice["message"]["content"]
-                else:
-                    content = str(choice)
-            else:
-                content = "No response generated."
-            
-            # Get token usage
-            tokens_used = 0
-            if response.usage:
-                tokens_used = response.usage.total_tokens
-            
-            return {
-                "content": content,
-                "model_id": response.model if hasattr(response, 'model') and response.model else (
+        """Get assistant response from OpenRouter, handling tool calls autonomously."""
+        messages = context.assembled_messages.copy()
+        tools_schema = self.tool_manager.get_openai_tools_schema()
+        
+        max_iterations = 5
+        total_tokens = 0
+        final_model_id = ""
+        
+        for iteration in range(max_iterations):
+            try:
+                response = await self.client.chat_completion(
+                    messages=messages,
+                    model_type=model_type,
+                    tools=tools_schema if tools_schema else None,
+                )
+                
+                # Get token usage
+                if response.usage:
+                    total_tokens += response.usage.total_tokens
+                
+                final_model_id = response.model if hasattr(response, 'model') and response.model else (
                     config.settings.model_qwen if model_type == ModelType.QWEN else 
                     config.settings.model_gemini_flash if model_type == ModelType.GEMINI_FLASH else 
                     "unknown_model"
-                ),
-                "tokens_used": tokens_used,
-            }
-            
-        except Exception as e:
-            print(f"Error getting assistant response: {e}")
-            return {
-                "content": f"Error: {str(e)}",
-                "model_id": "",
-                "tokens_used": 0,
-            }
+                )
+                
+                if not response.choices:
+                    return {"content": "No response generated.", "model_id": final_model_id, "tokens_used": total_tokens}
+                
+                choice = response.choices[0]
+                message_data = choice.get("message", {})
+                
+                content = message_data.get("content")
+                tool_calls = message_data.get("tool_calls")
+                
+                # Append assistant's message to context for the next iteration
+                messages.append(Message(
+                    role="assistant", 
+                    content=content if content else "",
+                    tool_calls=tool_calls
+                ))
+                
+                # If no tool calls, we are done
+                if not tool_calls:
+                    return {
+                        "content": content if content else "Done.",
+                        "model_id": final_model_id,
+                        "tokens_used": total_tokens,
+                    }
+                
+                # Execute tool calls
+                for tool_call in tool_calls:
+                    if tool_call.get("type") != "function":
+                        continue
+                    
+                    function = tool_call.get("function", {})
+                    name = function.get("name")
+                    arguments_str = function.get("arguments", "{}")
+                    call_id = tool_call.get("id")
+                    
+                    try:
+                        arguments = json.loads(arguments_str)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                        
+                    print(f"🔧 Agent executing tool: {name} with args {arguments}")
+                    tool_result = self.tool_manager.execute_tool(name, arguments)
+                    
+                    # Convert tool result to string
+                    if not tool_result.get("success"):
+                        result_str = f"Error: {tool_result.get('message')}"
+                    else:
+                        result_val = tool_result.get("result")
+                        if isinstance(result_val, (dict, list)):
+                            result_str = json.dumps(result_val)
+                        else:
+                            result_str = str(result_val)
+                            
+                    # Truncate extremely long tool outputs to avoid breaking context limit
+                    if len(result_str) > 20000:
+                        result_str = result_str[:20000] + "\n...[truncated]"
+                    
+                    messages.append(Message(
+                        role="tool",
+                        content=result_str,
+                        tool_call_id=call_id,
+                        name=name
+                    ))
+                
+                # After appending all tool results, loop repeats to get next assistant response
+                print(f"🔄 Tool execution complete. Requesting final answer...")
+                
+            except Exception as e:
+                print(f"Error getting assistant response: {e}")
+                return {
+                    "content": f"Error: {str(e)}",
+                    "model_id": final_model_id,
+                    "tokens_used": total_tokens,
+                }
+                
+        # If we exit the loop, we hit the max iterations
+        return {
+            "content": "I needed to use too many tools and hit my internal limit. Here is the last thing I was thinking.",
+            "model_id": final_model_id,
+            "tokens_used": total_tokens,
+        }
     
     async def _summarize_messages(self, user_msg_id: str, assistant_msg_id: str):
         """Summarize messages asynchronously."""

@@ -97,21 +97,36 @@ async fn start_backend(app_handle: tauri::AppHandle) -> Result<String, String> {
         
     let python_path = project_root.join(".venv/bin/python");
     
-    // Start the Python embedded backend with stdin/stdout pipes
+    // Start the Python embedded backend with stdin/stdout/stderr pipes
     let mut cmd = Command::new(if python_path.exists() { python_path.to_str().unwrap() } else { "python3" });
     cmd.current_dir(&project_root)
         .arg(&script_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(Stdio::piped());
     
     let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to start backend: {}", e))?;
     
-    // Get stdin and stdout handles
+    // Get stdin, stdout, stderr handles
     let stdin = child.stdin.take().ok_or("Failed to get stdin handle")?;
     let stdout = child.stdout.take().ok_or("Failed to get stdout handle")?;
+    let stderr = child.stderr.take().ok_or("Failed to get stderr handle")?;
+    
     let stdout_reader = BufReader::new(stdout);
+    
+    // Spawn a task to read stderr and emit events to frontend
+    let app_handle_clone = app_handle.clone();
+    tokio::spawn(async move {
+        use tokio::io::AsyncBufReadExt;
+        let mut reader = tokio::io::BufReader::new(tokio::process::ChildStderr::from_std(stderr).expect("Failed to convert stderr"));
+        let mut line = String::new();
+        while let Ok(bytes) = reader.read_line(&mut line).await {
+            if bytes == 0 { break; }
+            let _ = app_handle_clone.emit("backend-log", line.clone());
+            line.clear();
+        }
+    });
     
     // Store handles in async mutexes
     *state.stdin.lock().await = Some(stdin);
