@@ -3,7 +3,7 @@ use std::process::{Child, Command, Stdio};
 // use std::sync::Mutex;
 use std::io::{Write, BufRead, BufReader};
 use tokio::sync::Mutex as AsyncMutex;
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
