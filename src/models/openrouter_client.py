@@ -189,6 +189,7 @@ class OpenRouterClient:
         )
         
         try:
+            print(f"🤖 Requesting completion from model: {model_id}...")
             response = await self.client.post(
                 f"{self.base_url}/chat/completions",
                 json=request.dict(exclude_none=True),
@@ -202,6 +203,7 @@ class OpenRouterClient:
                 usage = data["usage"]
                 input_tokens = usage.get("prompt_tokens", 0)
                 output_tokens = usage.get("completion_tokens", 0)
+                print(f"✅ Response received from {model_id} (Tokens: {input_tokens} in, {output_tokens} out)")
                 config.track_cost(model_id, input_tokens, output_tokens)
             
             return ChatResponse(**data)
@@ -328,6 +330,7 @@ class OpenRouterClient:
     ) -> str:
         """Summarize content using gpt-oss-120b (free model)."""
         try:
+            print(f"📝 Background Task: Summarizing chat history using {model_id}...")
             messages = [
                 Message(role="system", content="You are a helpful assistant that creates concise summaries. Keep the summary under 400 tokens and preserve key information."),
                 Message(role="user", content=f"Summarize the following content concisely:\n\n{content}"),
@@ -389,6 +392,7 @@ class OpenRouterClient:
     ) -> List[str]:
         """Extract factual memories from a chat conversation."""
         try:
+            print(f"🧠 Background Task: Extracting new factual memories using {model_id}...")
             messages = [
                 Message(role="system", content="Did the user mention any new facts about themselves, their preferences, or their project details in the following text? If yes, extract them as concise bullet points. If no, return the string 'NO_FACTS'."),
                 Message(role="user", content=f"Text to extract facts from:\n\n{content}"),
