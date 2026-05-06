@@ -1,8 +1,9 @@
 import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography, Upload } from 'antd';
-import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined, InboxOutlined } from '@ant-design/icons';
+import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined, InboxOutlined, CodeOutlined } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -20,21 +21,51 @@ export default function ChatPanel() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [memories, setMemories] = useState<Array<{id: string, role: string, content: string, tags: string[], created_at: string}>>([]);
+  const [backendLogs, setBackendLogs] = useState<string[]>([]);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+  
+  const scrollLogsToBottom = () => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    scrollLogsToBottom();
+  }, [backendLogs]);
+
   // Initialize on component mount
   useEffect(() => {
     initializeBackend();
+    
+    let unlisten: (() => void) | undefined;
+    const setupListener = async () => {
+      try {
+        unlisten = await listen<string>('backend-log', (event) => {
+          setBackendLogs(prev => {
+            const newLogs = [...prev, event.payload];
+            if (newLogs.length > 200) return newLogs.slice(newLogs.length - 200);
+            return newLogs;
+          });
+        });
+      } catch (err) {
+        console.error("Failed to setup log listener", err);
+      }
+    };
+    setupListener();
+    
+    return () => {
+      if (unlisten) unlisten();
+    };
   }, []);
 
   // Reload history when sessionId changes
@@ -455,9 +486,9 @@ export default function ChatPanel() {
             </div>
           </Content>
 
-          <Sider width={280} collapsible reverseArrow collapsedWidth={0} theme="light" style={{ background: '#fff', borderLeft: '1px solid #f0f0f0' }}>
-            <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column' }}>
-              <Space direction="vertical" style={{ width: '100%' }}>
+          <Sider width={320} collapsible reverseArrow collapsedWidth={0} theme="light" style={{ background: '#fff', borderLeft: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <Space direction="vertical" style={{ width: '100%', flexShrink: 0 }}>
                 <Button 
                   block 
                   type={backendRunning ? 'default' : 'primary'}
@@ -483,7 +514,7 @@ export default function ChatPanel() {
                 </Button>
               </Space>
               
-              <div style={{ marginTop: 16, padding: 12, background: '#fafafa', borderRadius: 8 }}>
+              <div style={{ marginTop: 16, padding: 12, background: '#fafafa', borderRadius: 8, flexShrink: 0 }}>
                 <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
                   Session ID:
                 </div>
@@ -494,6 +525,36 @@ export default function ChatPanel() {
                   Status: <span style={{ color: backendRunning ? '#52c41a' : '#ff4d4f' }}>
                     {backendRunning ? 'Running' : 'Stopped'}
                   </span>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 16, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ fontSize: 12, color: '#666', marginBottom: 8, fontWeight: 'bold', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CodeOutlined /> Agentic Log
+                </div>
+                <div style={{ 
+                  flex: 1, 
+                  background: '#1e1e1e', 
+                  borderRadius: 8, 
+                  padding: '8px', 
+                  overflowY: 'auto',
+                  fontFamily: 'monospace',
+                  fontSize: '11px',
+                  color: '#d4d4d4',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5)'
+                }}>
+                  {backendLogs.length === 0 ? (
+                    <div style={{ color: '#666', fontStyle: 'italic' }}>Waiting for logs...</div>
+                  ) : (
+                    backendLogs.map((log, i) => (
+                      <div key={i} style={{ marginBottom: '4px', borderBottom: '1px solid #333', paddingBottom: '2px' }}>
+                        {log}
+                      </div>
+                    ))
+                  )}
+                  <div ref={logsEndRef} />
                 </div>
               </div>
             </div>
