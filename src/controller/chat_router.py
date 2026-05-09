@@ -77,11 +77,13 @@ class ChatRouter:
                 self.memory_store.update_message_tags(user_msg_id, tags)
         
         # Assemble context
+        is_supervisor = not bool(model_override)
         context = await self._assemble_context(
             session_id=effective_session_id,
             user_message=user_message,
             tags=tags,
             use_summaries=use_summaries,
+            is_supervisor=is_supervisor,
         )
         
         # Determine which model to use
@@ -127,6 +129,7 @@ class ChatRouter:
         user_message: str,
         tags: List[str],
         use_summaries: bool = True,
+        is_supervisor: bool = False,
     ) -> ChatContext:
         """Assemble chat context from summaries and tag-matched messages."""
         context_messages = []
@@ -134,6 +137,9 @@ class ChatRouter:
         # Get system prompt from config
         system_prompt = config.settings.system_prompt
         
+        if is_supervisor:
+            system_prompt += "\n\nSUPERVISOR MODE ENABLED: You are the Agentic Supervisor. You have access to specialized sub-agents via the `ask_expert_model` tool. If the user asks for code, delegate it to DeepSeek ('deepseek'). If the user provides images/audio/video, delegate to Gemini ('gemini'). If the task requires extremely complex logic or math, delegate to MIMO ('mimo'). If the task is simple, just answer it yourself."
+            
         # Add current datetime to system prompt
         datetime_info = self.tool_manager.basic_tools.get_current_datetime()["result"]
         date_str = datetime_info.get("datetime", datetime.now().strftime('%Y-%m-%d %H:%M:%S %A'))
@@ -150,7 +156,7 @@ class ChatRouter:
         quoted_paths = re.findall(r'"([^"]+\.[a-zA-Z0-9]+)"', user_message)
         path_pattern = r'(?:[a-zA-Z]:[\\/]|/)(?:[\w.-]+[\\/])*[\w.-]+\.[a-zA-Z0-9]+'
         unquoted_paths = re.findall(path_pattern, user_message)
-        file_pattern = r'[\w.-]+\.(?:py|txt|pdf|md|csv|json|js|ts|tsx|html|css|rs|log)'
+        file_pattern = r'[\w.-]+\.(?:py|txt|pdf|md|csv|json|js|ts|tsx|html|css|rs|log|png|jpg|jpeg|gif|webp|mp3|mp4|wav)'
         
         potential_paths = quoted_paths + unquoted_paths + re.findall(file_pattern, user_message)
         

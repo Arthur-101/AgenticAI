@@ -335,26 +335,36 @@ class BasicTools:
             actual_model = mapping.get(model_name.lower(), model_name)
             
             # Prepare context from files if provided
-            file_context = ""
+            content_list = [{"type": "text", "text": prompt}]
+            
             if file_paths:
-                file_context = "Relevant Files:\n"
+                import mimetypes
                 for path_str in file_paths:
                     try:
                         p = Path(path_str)
                         if p.exists() and p.is_file():
-                            if p.stat().st_size < 1024 * 1024:  # 1MB limit for text
+                            mime_type, _ = mimetypes.guess_type(str(p))
+                            
+                            if mime_type and mime_type.startswith('image/'):
+                                # Handle image
+                                with open(p, "rb") as image_file:
+                                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                                    content_list.append({
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{mime_type};base64,{encoded_string}"
+                                        }
+                                    })
+                            elif p.stat().st_size < 1024 * 1024:  # 1MB limit for text
+                                # Handle text
                                 content = FileProcessor.process_file(str(p))
-                                file_context += f"\n--- {p.name} ---\n{content}\n"
+                                content_list[0]["text"] += f"\n\n--- Contents of {p.name} ---\n{content}\n"
                     except Exception as e:
-                        file_context += f"\n(Error reading {path_str}: {str(e)})\n"
+                        content_list[0]["text"] += f"\n\n(Error reading {path_str}: {str(e)})\n"
             
-            full_prompt = prompt
-            if file_context:
-                full_prompt += f"\n\n{file_context}"
-                
             messages = [
                 {"role": "system", "content": "You are an expert sub-agent called by the primary orchestrator. Provide direct, concise answers with zero conversational filler. Your output will be parsed directly by another AI."},
-                {"role": "user", "content": full_prompt}
+                {"role": "user", "content": content_list if len(content_list) > 1 else content_list[0]["text"]}
             ]
             
             request_data = {
@@ -538,6 +548,27 @@ class BasicTools:
                     }
                 },
                 "returns": "Extracted text content of the webpage",
+            },
+            "ask_expert_model": {
+                "description": "Delegate a specialized task to an expert AI model (e.g., 'deepseek' for coding, 'gemini' for multimodal/vision, 'mimo' for complex reasoning). Use this when you cannot fulfill a request with your current capabilities.",
+                "parameters": {
+                    "model_name": {
+                        "type": "string",
+                        "description": "Name of the expert model (options: 'deepseek', 'gemini', 'mimo', 'gemini_pro')",
+                        "required": True,
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Detailed instructions for the expert model",
+                        "required": True,
+                    },
+                    "file_paths": {
+                        "type": "array",
+                        "description": "List of file paths the expert model should analyze",
+                        "required": False,
+                    }
+                },
+                "returns": "Response from the expert model",
             },
         }
         
