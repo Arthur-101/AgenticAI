@@ -55,14 +55,15 @@ class UsageDetails(BaseModel):
 
 class ChatResponse(BaseModel):
     """Chat completion response."""
-    id: str = Field(..., description="Response ID")
-    object: str = Field(..., description="Object type")
-    created: int = Field(..., description="Creation timestamp")
-    model: str = Field(..., description="Model used")
-    provider: str = Field(..., description="Model provider")
+    id: Optional[str] = Field(default=None, description="Response ID")
+    object: Optional[str] = Field(default=None, description="Object type")
+    created: Optional[int] = Field(default=None, description="Creation timestamp")
+    model: Optional[str] = Field(default=None, description="Model used")
+    provider: Optional[str] = Field(default=None, description="Model provider")
     system_fingerprint: Optional[str] = Field(default=None, description="System fingerprint")
-    choices: List[Dict[str, Any]] = Field(..., description="Response choices")
+    choices: Optional[List[Dict[str, Any]]] = Field(default=None, description="Response choices")
     usage: Optional[UsageDetails] = Field(default=None, description="Token usage")
+    error: Optional[Dict[str, Any]] = Field(default=None, description="Error returned by API")
 
 
 @dataclass

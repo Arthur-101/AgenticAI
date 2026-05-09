@@ -410,9 +410,9 @@ class BasicTools:
                 "max_tokens": 4000
             }
             
-            print(f"🤖 Supervisor delegating task to {actual_model}...")
+            print(f"🤖 Supervisor delegating task to {actual_model}... (this may take a minute)")
             
-            with httpx.Client(timeout=120.0) as client:
+            with httpx.Client(timeout=300.0) as client:
                 response = client.post(
                     f"{config.settings.openrouter_base_url}/chat/completions",
                     headers={

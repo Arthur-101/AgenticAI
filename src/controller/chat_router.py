@@ -349,6 +349,10 @@ class ChatRouter:
                     "unknown_model"
                 )
                 
+                if response.error:
+                    error_msg = response.error.get("message", "Unknown API error")
+                    return {"content": f"API Error: {error_msg}", "model_id": final_model_id, "tokens_used": total_tokens}
+                
                 if not response.choices:
                     return {"content": "No response generated.", "model_id": final_model_id, "tokens_used": total_tokens}
                 
@@ -389,7 +393,8 @@ class ChatRouter:
                         arguments = {}
                         
                     print(f"🔧 Agent executing tool: {name} with args {arguments}")
-                    tool_result = self.tool_manager.execute_tool(name, arguments)
+                    # Run synchronous tools in a thread pool to avoid blocking the asyncio event loop
+                    tool_result = await asyncio.to_thread(self.tool_manager.execute_tool, name, arguments)
                     
                     # Convert tool result to string
                     if not tool_result.get("success"):
