@@ -1,4 +1,4 @@
-import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography, Upload } from 'antd';
+import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select } from 'antd';
 import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined, InboxOutlined, CodeOutlined } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
@@ -18,6 +18,7 @@ export default function ChatPanel() {
   const [sessionId, setSessionId] = useState<string>('');
   const [backendRunning, setBackendRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>('auto');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [memories, setMemories] = useState<Array<{id: string, role: string, content: string, tags: string[], created_at: string}>>([]);
@@ -191,6 +192,7 @@ export default function ChatPanel() {
       const result = await invoke<{response: string, model: string, session_id: string}>('send_chat_message', {
         message: input,
         sessionId: sessionId || null,
+        modelOverride: selectedModel === 'auto' ? null : selectedModel,
       });
       
       const botMsg = { role: 'assistant', content: result.response, model_id: result.model };
@@ -563,6 +565,20 @@ export default function ChatPanel() {
 
           <Footer style={{ padding: '12px 24px', background: '#fff', marginTop: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', maxWidth: '800px', margin: '0 auto' }}>
+              <Select
+                value={selectedModel}
+                onChange={setSelectedModel}
+                style={{ width: 180, marginRight: 8 }}
+                disabled={!backendRunning || isLoading}
+                options={[
+                  { value: 'auto', label: 'Auto (Supervisor)' },
+                  { value: 'qwen', label: 'Qwen 3.5 Flash' },
+                  { value: 'gemini-flash', label: 'Gemini 2.5 Flash' },
+                  { value: 'deepseek', label: 'DeepSeek v3.2' },
+                  { value: 'mimo', label: 'MIMO v2 Pro' },
+                  { value: 'gemini-pro', label: 'Gemini 3.1 Pro' },
+                ]}
+              />
               <Button
                 icon={<PlusOutlined />}
                 title="Add file"

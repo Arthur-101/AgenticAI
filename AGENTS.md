@@ -72,14 +72,14 @@ Create a multi-model AI agent system using OpenRouter APIs with MCP-style archit
 ## Core Architecture
 
 ### Model Selection Strategy
-1. **Main Controller** (cheap, always running): qwen3.6-plus
-2. **Cheap Fast Model** (small tasks): gemini-2.5-flash-lite
+1. **Main Controller** (cheap, always running): qwen3.5-flash-02-23
+2. **Cheap Fast Model** (small tasks): qwen3.5-flash-02-23
 3. **Planner/Reasoning Layer** (complex tasks): mimo-v2-pro
 4. **Coding/Execution Model**: deepseek-v3.2
 5. **Multimodal Layer** (rare use): gemini-3.1-pro
 
 **Environment Configuration**
-- `AGENTICAI_DEFAULT_CHAT_MODEL` – default chat model (default: `gemini-2.5-flash-lite`).
+- `AGENTICAI_DEFAULT_CHAT_MODEL` – default chat model (default: `qwen3.5-flash-02-23`).
 - `AGENTICAI_SYSTEM_PROMPT` – global system prompt to enforce a consistent persona.
 - `AGENTICAI_SUMMARY_MAX_TOKENS` – max tokens for compressed summaries (default: 400).
 - `AGENTICAI_TAG_EXTRACTION_MODEL` – model used for tag extraction (optional).
@@ -88,7 +88,7 @@ Create a multi-model AI agent system using OpenRouter APIs with MCP-style archit
 - **Persistent chat history**: SQLite stores raw user and assistant turns.
 - **Compressed summaries**: After each turn, the free `gpt-oss-120b` model compacts the content to ≤ 400 tokens for efficient context.
 - **Smart tags**: Automatic tag extraction (via optional LLM or heuristic) enables retrieval of related past turns when a new prompt mentions similar topics.
-- **Default chat model**: Configurable via env `AGENTICAI_DEFAULT_CHAT_MODEL` (defaults to `gemini-2.5-flash-lite`).
+- **Default chat model**: Configurable via env `AGENTICAI_DEFAULT_CHAT_MODEL` (defaults to `qwen3.5-flash-02-23`).
 - **System prompt**: Configurable via env `AGENTICAI_SYSTEM_PROMPT` to keep a consistent persona across all responses.
 
 ### Pipeline

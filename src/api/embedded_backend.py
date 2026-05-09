@@ -74,6 +74,7 @@ class EmbeddedBackend:
         """Handle chat request."""
         message = params.get("message", "")
         session_id = params.get("session_id")
+        model_override = params.get("model_override")
         use_tags = params.get("use_tags", True)
         use_summaries = params.get("use_summaries", True)
         
@@ -83,6 +84,7 @@ class EmbeddedBackend:
         result = await self.router.chat(
             user_message=message,
             session_id=session_id,
+            model_override=model_override,
             use_tags=use_tags,
             use_summaries=use_summaries
         )

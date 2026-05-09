@@ -187,11 +187,13 @@ async fn stop_backend(app_handle: tauri::AppHandle) -> Result<String, String> {
 async fn send_chat_message(
     app_handle: tauri::AppHandle,
     message: String, 
-    session_id: Option<String>
+    session_id: Option<String>,
+    model_override: Option<String>
 ) -> Result<serde_json::Value, String> {
     let params = json!({
         "message": message,
         "session_id": session_id,
+        "model_override": model_override,
         "use_tags": true,
         "use_summaries": true,
         "request_id": Uuid::new_v4().to_string()
