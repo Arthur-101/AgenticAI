@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkEmoji from 'remark-emoji';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -58,7 +59,7 @@ export default function ChatPanel() {
           const data = JSON.parse(jsonStr);
           setMessages(prev => [...prev, {
             role: 'sub_agent',
-            content: `**Task:** ${data.prompt}\n\n**Response:** ${data.response}`,
+            content: data.content,
             model_id: data.model
           }]);
         } catch (e) {
@@ -465,7 +466,8 @@ export default function ChatPanel() {
                             border: msg.role === 'sub_agent' ? '1px dashed #adc6ff' : 'none',
                             borderRadius: 18, 
                             padding: '10px 14px',
-                            overflowX: 'auto'
+                            overflowX: 'auto',
+                            fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'
                           }}>
                             {msg.role === 'sub_agent' && (
                               <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2f54eb', marginBottom: '6px', textTransform: 'uppercase' }}>
@@ -473,7 +475,7 @@ export default function ChatPanel() {
                               </div>
                             )}
                             <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
+                              remarkPlugins={[remarkGfm, remarkEmoji]}
                               components={{
                                 code({node, inline, className, children, ...props}: any) {
                                   const match = /language-(\w+)/.exec(className || '');
