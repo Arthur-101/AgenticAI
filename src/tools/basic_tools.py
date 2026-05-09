@@ -268,6 +268,42 @@ class BasicTools:
             "message": "System information retrieved",
         }
     
+    def get_current_datetime(self) -> Dict[str, Any]:
+        """Get the current date and time."""
+        from datetime import datetime
+        import platform
+        import subprocess
+        
+        is_wsl = 'linux' in platform.system().lower() and 'microsoft' in platform.release().lower()
+        if is_wsl:
+            try:
+                # Use powershell to get the exact host Windows time since WSL clocks often drift or are stuck in UTC
+                result = subprocess.run(["powershell.exe", "-Command", "Get-Date -Format 'yyyy-MM-dd HH:mm:ss dddd'"], capture_output=True, text=True, timeout=2)
+                if result.returncode == 0 and result.stdout.strip():
+                    date_str = result.stdout.strip()
+                    return {
+                        "success": True,
+                        "result": {
+                            "datetime": date_str,
+                            "note": "Time retrieved from Windows Host"
+                        },
+                        "message": "Current datetime retrieved",
+                    }
+            except Exception:
+                pass
+                
+        now = datetime.now()
+        return {
+            "success": True,
+            "result": {
+                "datetime": now.isoformat(),
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M:%S"),
+                "weekday": now.strftime("%A"),
+            },
+            "message": "Current datetime retrieved",
+        }
+
     def web_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """Search the web for a query."""
         try:
