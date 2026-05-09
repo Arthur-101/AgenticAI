@@ -178,15 +178,20 @@ class ChatRouter:
             try:
                 p = Path(actual_path_str)
                 if p.exists() and p.is_file():
-                    # For small files (< 4KB), we can just dump them in context
-                    if p.stat().st_size < 4096:
-                        content = FileProcessor.process_file(str(p))
-                        extracted_files_context.append(f"--- Contents of {path_str} ---\n{content}\n--- End of {path_str} ---")
-                    # For larger files (up to 10MB), we chunk and use RAG
-                    elif p.stat().st_size < 10 * 1024 * 1024:
-                        content = FileProcessor.process_file(str(p))
-                        # Index the document
-                        self.vector_store.add_document(str(p), content)
+                    ext = p.suffix.lower()
+                    if ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp3', '.mp4', '.wav']:
+                        extracted_files_context.append(f"--- File Reference: {path_str} ---\n(This is a media file. You MUST use the `ask_expert_model` tool to analyze it by passing this file path to Gemini.)")
+                    else:
+                        # For small files (< 4KB), we can just dump them in context
+                        if p.stat().st_size < 4096:
+                            content = FileProcessor.process_file(str(p))
+                            extracted_files_context.append(f"--- Contents of {path_str} ---\n{content}\n--- End of {path_str} ---")
+                        # For larger files (up to 10MB), we chunk and use RAG
+                        elif p.stat().st_size < 10 * 1024 * 1024:
+                            content = FileProcessor.process_file(str(p))
+                            # Index the document
+                            self.vector_store.add_document(str(p), content)
+                            extracted_files_context.append(f"--- File Reference: {path_str} ---\n(This is a large text document. Relevant snippets will be retrieved based on the query.)")
             except Exception:
                 pass
                 

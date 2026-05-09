@@ -49,22 +49,24 @@ export default function ChatPanel() {
     initializeBackend();
     
     let unlisten: (() => void) | undefined;
-    const setupListener = async () => {
-      try {
-        unlisten = await listen<string>('backend-log', (event) => {
-          setBackendLogs(prev => {
-            const newLogs = [...prev, event.payload];
-            if (newLogs.length > 200) return newLogs.slice(newLogs.length - 200);
-            return newLogs;
-          });
-        });
-      } catch (err) {
-        console.error("Failed to setup log listener", err);
+    let isMounted = true;
+
+    listen<string>('backend-log', (event) => {
+      setBackendLogs(prev => {
+        const newLogs = [...prev, event.payload];
+        if (newLogs.length > 200) return newLogs.slice(newLogs.length - 200);
+        return newLogs;
+      });
+    }).then(fn => {
+      if (!isMounted) {
+        fn();
+      } else {
+        unlisten = fn;
       }
-    };
-    setupListener();
+    }).catch(err => console.error("Failed to setup log listener", err));
     
     return () => {
+      isMounted = false;
       if (unlisten) unlisten();
     };
   }, []);

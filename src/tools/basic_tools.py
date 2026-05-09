@@ -653,14 +653,20 @@ class ToolManager:
         import platform
         import re
         if 'linux' in platform.system().lower() and 'microsoft' in platform.release().lower():
+            def convert_p(p):
+                m = re.match(r'^([a-zA-Z]):[\\/](.*)$', p)
+                if m:
+                    drive = m.group(1).lower()
+                    rest = m.group(2).replace('\\', '/')
+                    return f"/mnt/{drive}/{rest}"
+                return p
+                
             for key in ['file_path', 'directory']:
                 if key in parameters and isinstance(parameters[key], str):
-                    p = parameters[key]
-                    m = re.match(r'^([a-zA-Z]):[\\/](.*)$', p)
-                    if m:
-                        drive = m.group(1).lower()
-                        rest = m.group(2).replace('\\', '/')
-                        parameters[key] = f"/mnt/{drive}/{rest}"
+                    parameters[key] = convert_p(parameters[key])
+            
+            if 'file_paths' in parameters and isinstance(parameters['file_paths'], list):
+                parameters['file_paths'] = [convert_p(p) for p in parameters['file_paths']]
         
         try:
             tool_func = self.tool_registry[tool_name]
