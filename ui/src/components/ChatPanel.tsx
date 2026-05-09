@@ -52,6 +52,21 @@ export default function ChatPanel() {
     let isMounted = true;
 
     listen<string>('backend-log', (event) => {
+      if (event.payload.startsWith('SUB_AGENT_MSG:')) {
+        try {
+          const jsonStr = event.payload.replace('SUB_AGENT_MSG:', '');
+          const data = JSON.parse(jsonStr);
+          setMessages(prev => [...prev, {
+            role: 'sub_agent',
+            content: `**Task:** ${data.prompt}\n\n**Response:** ${data.response}`,
+            model_id: data.model
+          }]);
+        } catch (e) {
+          console.error("Failed to parse sub agent message", e);
+        }
+        return;
+      }
+      
       setBackendLogs(prev => {
         const newLogs = [...prev, event.payload];
         if (newLogs.length > 200) return newLogs.slice(newLogs.length - 200);
@@ -433,23 +448,30 @@ export default function ChatPanel() {
                           width: 32,
                           height: 32,
                           borderRadius: 50,
-                          background: msg.role === 'user' ? '#1890ff' : '#fafafa',
+                          background: msg.role === 'user' ? '#1890ff' : msg.role === 'sub_agent' ? '#f0f5ff' : '#fafafa',
+                          border: msg.role === 'sub_agent' ? '1px dashed #adc6ff' : 'none',
                           marginRight: 10,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          color: msg.role === 'user' ? '#fff' : '#666',
+                          color: msg.role === 'user' ? '#fff' : msg.role === 'sub_agent' ? '#2f54eb' : '#666',
                           fontSize: 16,
                         }}>
-                          {msg.role === 'user' ? 'U' : 'A'}
+                          {msg.role === 'user' ? 'U' : msg.role === 'sub_agent' ? '🤖' : 'A'}
                         </div>
                         <div style={{ flex: 1, maxWidth: '85%' }}>
                           <div style={{ 
-                            background: msg.role === 'user' ? '#e6f7ff' : '#fff', 
+                            background: msg.role === 'user' ? '#e6f7ff' : msg.role === 'sub_agent' ? '#f0f5ff' : '#fff',
+                            border: msg.role === 'sub_agent' ? '1px dashed #adc6ff' : 'none',
                             borderRadius: 18, 
                             padding: '10px 14px',
                             overflowX: 'auto'
                           }}>
+                            {msg.role === 'sub_agent' && (
+                              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2f54eb', marginBottom: '6px', textTransform: 'uppercase' }}>
+                                Sub-Agent ({msg.model_id})
+                              </div>
+                            )}
                             <ReactMarkdown 
                               remarkPlugins={[remarkGfm]}
                               components={{
@@ -475,7 +497,7 @@ export default function ChatPanel() {
                               {msg.content}
                             </ReactMarkdown>
                           </div>
-                          {msg.model_id && msg.role === 'assistant' && (
+                          {msg.model_id && (msg.role === 'assistant' || msg.role === 'sub_agent') && (
                             <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px', textAlign: 'right' }}>
                               Model: {msg.model_id}
                             </div>

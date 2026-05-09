@@ -97,6 +97,7 @@ class ChatRouter:
         assistant_response = await self._get_assistant_response(
             context=context,
             model_type=model_type,
+            session_id=effective_session_id,
         )
         
         # Save assistant message
@@ -255,8 +256,11 @@ class ChatRouter:
                 )
                 
         # Add recent raw messages (last 4 messages = 2 turns) to keep conversational style
-        recent_raw = self.memory_store.get_messages(session_id, limit=4)
-        for msg in recent_raw:
+        # We fetch a few extra in case there are sub_agent messages to filter out
+        recent_raw = self.memory_store.get_messages(session_id, limit=8)
+        valid_recent = [m for m in recent_raw if m["role"] != "sub_agent"][-4:]
+        
+        for msg in valid_recent:
             # The current user message is already in the db, don't add it yet
             if msg["content_raw"] != user_message:
                 context_messages.append(Message(role=msg["role"], content=msg["content_raw"]))
@@ -322,6 +326,7 @@ class ChatRouter:
         self,
         context: ChatContext,
         model_type: ModelType,
+        session_id: str,
     ) -> Dict[str, Any]:
         """Get assistant response from OpenRouter, handling tool calls autonomously."""
         messages = context.assembled_messages.copy()
@@ -410,6 +415,36 @@ class ChatRouter:
                     if len(result_str) > 20000:
                         result_str = result_str[:20000] + "\n...[truncated]"
                     
+                    if name == "ask_expert_model":
+                        sub_model = arguments.get("model_name", "unknown")
+                        sub_prompt = arguments.get("prompt", "")
+                        
+                        # Make sure to grab any file paths sent to the sub-agent
+                        sub_files = arguments.get("file_paths", [])
+                        file_context_str = ""
+                        if sub_files:
+                            file_context_str = f" **[Files attached: {', '.join([Path(p).name for p in sub_files])}]**"
+                        
+                        full_content = f"**Task:** {sub_prompt}{file_context_str}\n\n**Response:**\n{result_str}"
+                        
+                        # Save the sub_agent message
+                        self.memory_store.save_message(
+                            session_id=session_id,
+                            role="sub_agent",
+                            content_raw=full_content,
+                            model_id=sub_model,
+                            tokens_used=0,
+                        )
+                        
+                        # Print special JSON string for Tauri frontend
+                        import sys
+                        log_msg = {
+                            "type": "sub_agent_msg",
+                            "model": sub_model,
+                            "content": full_content
+                        }
+                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+
                     messages.append(Message(
                         role="tool",
                         content=result_str,
