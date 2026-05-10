@@ -1,14 +1,13 @@
 import sqlite3
 import json
-import time
-from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
-from pathlib import Path
+import sqlite3
 import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from src.utils.config import config
-from src.models.openrouter_client import ModelType, Message
-
+from src.memory.redis_store import redis_store
 
 class SQLiteMemoryStore:
     """SQLite-based memory storage for conversations, tools, and documents."""
@@ -517,6 +516,16 @@ class SQLiteMemoryStore:
                 tokens_used,
             ),
         )
+        
+        # Publish event for multi-process sync
+        if redis_store.is_connected():
+            redis_store.publish_event("memory:message_saved", {
+                "message_id": message_id,
+                "session_id": session_id,
+                "role": role,
+                "model_id": model_id
+            })
+            
         return message_id
     
     def update_message_summary(
@@ -871,7 +880,7 @@ class SessionManager:
         self,
         max_messages: int = 10,
         max_tokens: int = 2000,
-    ) -> List[Message]:
+    ) -> List['Message']:
         """Get conversation context for current session."""
         from src.models.openrouter_client import Message
         

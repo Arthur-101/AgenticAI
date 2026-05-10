@@ -313,6 +313,15 @@ def show_stats():
     if "most_used_model" in db_stats:
         table.add_row("Most Used Model", f"{db_stats['most_used_model']} ({db_stats['most_used_model_count']} times)")
     
+    # Check Redis status
+    try:
+        from src.memory.redis_store import redis_store
+        redis_status = "Connected" if redis_store.is_connected() else "Disconnected"
+    except ImportError:
+        redis_status = "Not Installed"
+        
+    table.add_row("Redis Status", redis_status)
+    
     console.print(table)
     
     # Cost stats

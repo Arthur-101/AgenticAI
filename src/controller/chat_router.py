@@ -9,6 +9,7 @@ from datetime import datetime
 from src.models.openrouter_client import OpenRouterClient, Message, ModelType
 from src.memory.sqlite_store import SQLiteMemoryStore, SessionManager
 from src.memory.vector_store import VectorMemoryStore
+from src.memory.redis_store import redis_store
 from src.utils.config import config
 from src.processors.file_processor import FileProcessor
 from src.tools.basic_tools import ToolManager
@@ -54,6 +55,10 @@ class ChatRouter:
         # Use provided session or current session
         effective_session_id = session_id or self.current_session_id
         
+        # Cache active session model in Redis
+        if redis_store.is_connected():
+            redis_store.set_active_model(effective_session_id, model_override or "auto")
+
         # Save raw user message
         user_msg_id = self.memory_store.save_message(
             session_id=effective_session_id,

@@ -146,7 +146,7 @@ data/                 # Database and document storage
 
 ### Phase 3: Advanced Features
 - [x] Tool execution framework (MCP-style)
-- [ ] Advanced memory (Redis)
+- [x] Advanced memory (Redis)
 - [ ] System tray with hidden background service (Windows specific)
 - [ ] OCR/image processing
 - [ ] Audio/video transcription (via Gemini Flash Lite)

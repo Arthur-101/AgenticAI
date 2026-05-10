@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     sqlite_db_path: str = "data/sqlite/memory.db"
     chroma_db_path: str = "data/chroma"
     documents_path: str = "data/documents"
+    redis_url: str = "redis://localhost:6379/0"
 
     # ── Cost tracking ────────────────────────────────────────
     cost_warning_threshold: float = 10.0
