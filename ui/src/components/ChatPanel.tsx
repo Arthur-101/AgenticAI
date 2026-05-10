@@ -467,7 +467,7 @@ export default function ChatPanel() {
                             borderRadius: 18, 
                             padding: '10px 14px',
                             overflowX: 'auto',
-                            fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'
+                            fontFamily: 'inherit'
                           }}>
                             {msg.role === 'sub_agent' && (
                               <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2f54eb', marginBottom: '6px', textTransform: 'uppercase' }}>
