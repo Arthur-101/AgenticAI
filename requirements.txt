@@ -40,4 +40,4 @@ redis>=5.0.0
 pillow>=10.0.0  # For image processing
 pytesseract>=0.3.10  # For OCR
 numpy>=1.24.0
-pandas>=2.0.0
+pandas>=2.0.0redis>=5.0.1

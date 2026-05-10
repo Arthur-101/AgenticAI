@@ -49,21 +49,22 @@ User Input → Controller → Decision → Model/Tool → Aggregation → Output
 
 ## **Phase 2: Background Service + UI - IN PROGRESS**
 
-- [x]  Tauri system tray app (deferred)
+- [x]  Tauri system tray app (deferred to Phase 3)
 - [x]  Windows background service
 - [x]  Hotkey support
 - [x]  UI Chat page (main chat, start/stop agent, history view)
 - [x]  Multiple chat sessions and sidebar navigation
 - [x]  Summarization & smart tags (backend compression and tag extraction)
 - [x]  ChromaDB integration (Vector DB for RAG memory)
-- [ ]  Advanced Document RAG (File Chunking & Vector Search)
+- [x]  Advanced Document RAG (File Chunking & Vector Search)
 
 ## Phase 3: Advanced Features
 
 - [x]  Tool Execution Framework (MCP-style)
 - [ ]  Advanced memory (Redis)
+- [ ]  System tray with hidden background service (Windows specific)
 - [ ]  OCR/image processing
-- [ ]  Audio/video transcription
+- [ ]  Audio/video transcription (via Gemini Flash Lite)
 - [ ]  Cloud synchronization
 
 ## Technical Decisions

@@ -141,14 +141,15 @@ data/                 # Database and document storage
 - [x] Windows background service via Tauri
 - [x] Hotkey support (basic window focus)
 - [x] UI Chat page (start/stop agent, history view, summarization, smart tags)
-- [ ] File processing (.py, PDF, TXT) (pending - Phase 3)
-- [ ] ChromaDB integration (pending - Phase 3)
+- [x] File processing (.py, PDF, TXT) (small files direct, large via RAG)
+- [x] ChromaDB integration (Vector DB for RAG memory)
 
 ### Phase 3: Advanced Features
-- [ ] Tool execution framework
+- [x] Tool execution framework (MCP-style)
 - [ ] Advanced memory (Redis)
+- [ ] System tray with hidden background service (Windows specific)
 - [ ] OCR/image processing
-- [ ] Audio/video transcription
+- [ ] Audio/video transcription (via Gemini Flash Lite)
 - [ ] Cloud synchronization
 
 ## Configuration
