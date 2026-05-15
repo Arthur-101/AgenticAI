@@ -337,7 +337,7 @@ class ChatRouter:
         messages = context.assembled_messages.copy()
         tools_schema = self.tool_manager.get_openai_tools_schema()
         
-        max_iterations = 5
+        max_iterations = 15     # To prevent infinite loops in case of tool call issues, we set a max iteration limit. Each iteration represents one assistant response + tool execution cycle.
         total_tokens = 0
         final_model_id = ""
         
