@@ -4,7 +4,7 @@ import os
 import sys
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import json
 from datetime import datetime
 import httpx
@@ -364,7 +364,7 @@ class BasicTools:
                 "qwen": config.settings.model_qwen,
                 "gemini": config.settings.model_gemini_flash,
                 "gemini_flash": config.settings.model_gemini_flash,
-                "gemini_pro": config.settings.model_gemini_pro,
+                # "gemini_pro": config.settings.model_gemini_pro,
                 "deepseek": config.settings.model_deepseek,
                 "deepseek_flash": config.settings.model_deepseek,
                 "deepseek_pro": config.settings.model_deepseek_pro,
@@ -375,7 +375,7 @@ class BasicTools:
             actual_model = mapping.get(model_name.lower(), model_name)
             
             # Prepare context from files if provided
-            content_list = [{"type": "text", "text": prompt}]
+            content_list: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
             
             if file_paths:
                 import mimetypes
@@ -486,6 +486,27 @@ class BasicTools:
     
     def get_available_tools(self) -> Dict[str, Any]:
         """Get list of available tools with descriptions."""
+        from src.utils.config import config
+        
+        # Dynamically build expert model descriptions from capabilities
+        expert_desc = "Delegate a specialized task to an expert AI model. Use this when you cannot fulfill a request with your current capabilities.\n\n"
+        expert_options = []
+        for model_id, caps in config.settings.model_capabilities.items():
+            if "qwen" in model_id: continue # orchestrator itself
+            
+            friendly_name = model_id.split("/")[-1].replace(".", "").replace("-", "_")
+            if "mimo" in model_id: friendly_name = "mimo_pro"
+            elif "gemini" in model_id and "flash" in model_id: friendly_name = "gemini_flash"
+            elif "gemini" in model_id and "pro" in model_id: friendly_name = "gemini_pro"
+            
+            expert_options.append(f"'{friendly_name}'")
+            expert_desc += f"- {friendly_name}:\n"
+            expert_desc += f"  Strengths: {', '.join(caps.get('strengths', []))}\n"
+            expert_desc += f"  Best for: {', '.join(caps.get('best_use_cases', []))}\n\n"
+            
+        expert_desc += """IMPORTANT: Be sure to read the model_capabilities section before using any expert model, so that you can assign correct model to correct task.
+                        deepseek models are capable of logic/reasoning too. DO NOT just force them to write code unless needed."""
+
         tools = {
             "get_current_directory": {
                 "description": "Get current working directory",
@@ -590,11 +611,11 @@ class BasicTools:
                 "returns": "Extracted text content of the webpage",
             },
             "ask_expert_model": {
-                "description": "Delegate a specialized task to an expert AI model. deepseek_pro is for deep reasoning, workflow design and logic. deepseek_flash is for coding and software engineering. mimo_pro is for maximum intelligence, complex reasoning, and multimodal inputs (images, audio, video). gemini_flash is for efficient multimodal processing. Use this when you cannot fulfill a request with your current capabilities.",
+                "description": expert_desc,
                 "parameters": {
                     "model_name": {
                         "type": "string",
-                        "description": "Name of the expert model (options: 'deepseek_pro', 'deepseek_flash', 'mimo_pro', 'gemini_flash', 'gemini_pro')",
+                        "description": f"Name of the expert model (options: {', '.join(expert_options)})",
                         "required": True,
                     },
                     "prompt": {

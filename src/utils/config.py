@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     model_mimo: str = "xiaomi/mimo-v2.5-pro"
     model_deepseek: str = "deepseek/deepseek-v4-flash"
     model_deepseek_pro: str = "deepseek/deepseek-v4-pro"
-    # model_gemini_pro: str = "google/gemini-3.1-pro"
 
     # ── Memory configuration ─────────────────────────────────
     sqlite_db_path: str = "data/sqlite/memory.db"
@@ -56,7 +55,6 @@ class Settings(BaseSettings):
         "xiaomi/mimo-v2.5-pro": {"input": 1.0, "output": 3.0},
         "deepseek/deepseek-v4-flash": {"input": 0.14, "output": 0.28},
         "deepseek/deepseek-v4-pro": {"input": 0.435, "output": 0.87},
-        # "google/gemini-3.1-pro": {"input": 1.25, "output": 5.00},
         "openai/gpt-oss-120b": {"input": 0.0, "output": 0.0},  # Free model for summarization
     }
 
@@ -64,22 +62,37 @@ class Settings(BaseSettings):
     model_capabilities: Dict[str, Dict[str, Any]] = {
         "qwen/qwen3.5-flash-02-23": {
             "role": "default_orchestrator",
+            "supports": {"text": True, "image": True, "video": True, "audio": False, "multimodal_reasoning": True, "tool_use": True, "long_context": True},
+            "strengths": ["fast_chat", "multimodal_parsing", "conversation", "intent_classification", "tool_routing", "lightweight_coding", "memory_handling"],
+            "best_use_cases": ["general_chat", "screenshots", "small_video_analysis", "lightweight_debugging", "tool_orchestration", "routing", "OCR", "quick_multimodal_tasks"],
             "reasoning_level": 6, "coding_level": 6, "planning_level": 5,
         },
         "google/gemini-2.5-flash-lite": {
             "role": "efficient_multimodal_processor",
+            "supports": {"text": True, "image": True, "video": True, "audio": True, "multimodal_reasoning": True, "tool_use": True, "long_context": True},
+            "strengths": ["OCR", "large_pdf_analysis", "video_understanding", "long_context_processing", "multimodal_extraction", "high_throughput_processing"],
+            "best_use_cases": ["large_documents", "research_extraction", "video_analysis", "audio_transcription", "long_transcripts", "memory_synthesis", "high_volume_multimodal"],
             "reasoning_level": 7, "coding_level": 6, "planning_level": 6,
         },
         "deepseek/deepseek-v4-pro": {
             "role": "agentic_reasoning_engine",
+            "supports": {"text": True, "image": False, "video": False, "audio": False, "multimodal_reasoning": False, "tool_use": True, "long_context": True},
+            "strengths": ["deep_reasoning", "analysis", "agentic_reasoning", "planning", "decomposition", "workflow_design", "autonomous_reasoning", "architecture_generation", "multi_step_reasoning", "maths"],
+            "best_use_cases": ["deep_reasoning", "analysis", "AI_agents", "workflow_planning", "autonomous_systems", "multi_agent_systems", "architecture_design", "research_decomposition", "strategic_reasoning"],
             "reasoning_level": 9, "coding_level": 10, "planning_level": 10,
         },
         "deepseek/deepseek-v4-flash": {
             "role": "software_engineering_specialist",
+            "supports": {"text": True, "image": False, "video": False, "audio": False, "multimodal_reasoning": False, "tool_use": True, "long_context": True},
+            "strengths": ["coding", "debugging", "reasoning", "repository_reasoning", "algorithms", "backend_architecture", "optimization", "refactoring", "devops"],
+            "best_use_cases": ["coding", "reasoning", "backend_systems", "large_codebases", "APIs", "infrastructure", "AI_pipelines", "database_optimization", "production_engineering"],
             "reasoning_level": 8, "coding_level": 9.5, "planning_level": 7,
         },
         "xiaomi/mimo-v2.5-pro": {
             "role": "maximum_intelligence_engine",
+            "supports": {"text": True, "image": False, "video": False, "audio": False, "multimodal_reasoning": False, "tool_use": True, "long_context": True},
+            "strengths": ["very_deep_reasoning", "massive_synthesis", "research", "cross_document_analysis", "scientific_reasoning", "enterprise_reasoning", "highest_reliability"],
+            "best_use_cases": ["research_systems", "massive_documents", "enterprise_analysis", "scientific_workflows", "high_stakes_outputs", "cross_modal_reasoning", "large_scale_synthesis"],
             "reasoning_level": 10, "coding_level": 9, "planning_level": 9,
         },
     }
@@ -87,14 +100,14 @@ class Settings(BaseSettings):
     complexity_routing: Dict[str, str] = {
         "0-3": "qwen/qwen3.5-flash-02-23",
         "4-6": "google/gemini-2.5-flash-lite",
-        "7-9": "deepseek/deepseek-v4-flash",
-        "10-12": "deepseek/deepseek-v4-pro",
+        "7-10": "deepseek/deepseek-v4-flash",
+        "11-12": "deepseek/deepseek-v4-pro",
         "13+": "xiaomi/mimo-v2.5-pro",
     }
     
     # ── Chat enhancements ─────────────────────────────────────
     default_chat_model: str = "qwen/qwen3.5-flash-02-23"
-    system_prompt: str = "You are Mira, an intelligent Orchestrator AI. You have access to expert sub-agents via the `ask_expert_model` tool. You also have a long-term memory system. When provided with memory snippets, you MUST use them and acknowledge them." # IMPORTANT: DeepSeek is highly capable of general logic, prompt engineering, and complex writing—it is NOT just for coding. Do not force it to write code unless the user explicitly asks for code. Use Mimo-v2.5 for complex reasoning, especially when the user provides multimodal inputs (Images, Audio, Video).
+    system_prompt: str = "Your name is Mira, an intelligent Orchestrator AI. You have access to expert sub-agents via the `ask_expert_model` tool. You also have a long-term memory system. When provided with memory snippets, you MUST use them and acknowledge them." # IMPORTANT: DeepSeek is highly capable of general logic, prompt engineering, and complex writing—it is NOT just for coding. Do not force it to write code unless the user explicitly asks for code. Use Mimo-v2.5 for complex reasoning, especially when the user provides multimodal inputs (Images, Audio, Video).
     summary_max_tokens: int = 400
     tag_extraction_model: Optional[str] = None
 
@@ -176,7 +189,6 @@ class ConfigManager:
             "mimo-v2.5-pro": "xiaomi/mimo-v2.5-pro",
             "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
             "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
-            # "gemini-3.1-pro": "google/gemini-3.1-pro",
             "gpt-oss-120b": "openai/gpt-oss-120b",
         }
         return mapping.get(model_name, model_name)
