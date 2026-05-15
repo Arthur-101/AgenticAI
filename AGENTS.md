@@ -73,9 +73,9 @@ Create a multi-model AI agent system using OpenRouter APIs with MCP-style archit
 
 ### Model Selection Strategy
 1. **Main Controller** (cheap, always running): qwen3.5-flash-02-23
-2. **Cheap Fast Model** (small tasks): qwen3.5-flash-02-23
-3. **Planner/Reasoning Layer** (complex tasks): mimo-v2-pro
-4. **Coding/Execution Model**: deepseek-v3.2
+2. **Cheap Fast Model** (small tasks): gemini-2.5-flash-lite
+3. **Planner/Reasoning Layer** (complex tasks): deepseek-v4-pro / mimo-v2.5-pro
+4. **Coding/Execution Model**: deepseek-v4-flash
 5. **Multimodal Layer** (rare use): gemini-3.1-pro
 
 **Environment Configuration**

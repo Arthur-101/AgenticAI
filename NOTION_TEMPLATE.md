@@ -28,8 +28,8 @@ Proposed feature rollout (one‑by‑one, in priority order)
 
 - Main Controller (cheap, always running): qwen3.6-plus
 - Cheap Fast Model (small tasks): gemini-2.5-flash-lite
-- Planner/Reasoning Layer (complex tasks): mimo-v2-pro
-- Coding/Execution Model: deepseek-v3.2
+- Planner/Reasoning Layer (complex tasks): deepseek-v4-pro / mimo-v2.5-pro
+- Coding/Execution Model: deepseek-v4-flash
 - Multimodal Layer (rare use): gemini-3.1-pro
 
 ## **Pipeline**

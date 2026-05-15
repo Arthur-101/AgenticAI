@@ -363,9 +363,13 @@ class BasicTools:
             mapping = {
                 "qwen": config.settings.model_qwen,
                 "gemini": config.settings.model_gemini_flash,
+                "gemini_flash": config.settings.model_gemini_flash,
                 "gemini_pro": config.settings.model_gemini_pro,
                 "deepseek": config.settings.model_deepseek,
+                "deepseek_flash": config.settings.model_deepseek,
+                "deepseek_pro": config.settings.model_deepseek_pro,
                 "mimo": config.settings.model_mimo,
+                "mimo_pro": config.settings.model_mimo,
             }
             
             actual_model = mapping.get(model_name.lower(), model_name)
@@ -586,11 +590,11 @@ class BasicTools:
                 "returns": "Extracted text content of the webpage",
             },
             "ask_expert_model": {
-                "description": "Delegate a specialized task to an expert AI model (e.g., 'deepseek' for coding, 'gemini' for multimodal/vision, 'mimo' for complex reasoning). Use this when you cannot fulfill a request with your current capabilities.",
+                "description": "Delegate a specialized task to an expert AI model. deepseek_pro is for deep reasoning, workflow design and logic. deepseek_flash is for coding and software engineering. mimo_pro is for maximum intelligence, complex reasoning, and multimodal inputs (images, audio, video). gemini_flash is for efficient multimodal processing. Use this when you cannot fulfill a request with your current capabilities.",
                 "parameters": {
                     "model_name": {
                         "type": "string",
-                        "description": "Name of the expert model (options: 'deepseek', 'gemini', 'mimo', 'gemini_pro')",
+                        "description": "Name of the expert model (options: 'deepseek_pro', 'deepseek_flash', 'mimo_pro', 'gemini_flash', 'gemini_pro')",
                         "required": True,
                     },
                     "prompt": {

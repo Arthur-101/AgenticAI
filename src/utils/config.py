@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     # ── Model configuration ───────────────────────────────────
     model_qwen: str = "qwen/qwen3.5-flash-02-23"
     model_gemini_flash: str = "google/gemini-2.5-flash-lite"
-    model_mimo: str = "mimo/mimo-v2-pro"
-    model_deepseek: str = "deepseek/deepseek-v3.2"
-    model_gemini_pro: str = "google/gemini-3.1-pro"
+    model_mimo: str = "xiaomi/mimo-v2.5-pro"
+    model_deepseek: str = "deepseek/deepseek-v4-flash"
+    model_deepseek_pro: str = "deepseek/deepseek-v4-pro"
+    # model_gemini_pro: str = "google/gemini-3.1-pro"
 
     # ── Memory configuration ─────────────────────────────────
     sqlite_db_path: str = "data/sqlite/memory.db"
@@ -50,26 +51,50 @@ class Settings(BaseSettings):
 
     # ── Model costs (per‑million‑tokens) ───────────────────────
     model_costs: Dict[str, Dict[str, float]] = {
-        "qwen/qwen-2.5-32b-instruct": {"input": 0.50, "output": 0.50},
-        "google/gemini-2.5-flash-lite": {"input": 0.10, "output": 0.30},
-        "mimo/mimo-v2-pro": {"input": 1.50, "output": 4.50},
-        "deepseek/deepseek-v3.2": {"input": 0.14, "output": 0.28},
-        "google/gemini-3.1-pro": {"input": 1.25, "output": 5.00},
+        "qwen/qwen3.5-flash-02-23": {"input": 0.065, "output": 0.26},
+        "google/gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
+        "xiaomi/mimo-v2.5-pro": {"input": 1.0, "output": 3.0},
+        "deepseek/deepseek-v4-flash": {"input": 0.14, "output": 0.28},
+        "deepseek/deepseek-v4-pro": {"input": 0.435, "output": 0.87},
+        # "google/gemini-3.1-pro": {"input": 1.25, "output": 5.00},
         "openai/gpt-oss-120b": {"input": 0.0, "output": 0.0},  # Free model for summarization
     }
 
-    # ── Task‑type → model mapping (initial rule set) ───────────
-    task_model_mapping: Dict[str, str] = {
-        "simple_chat": "gemini-2.5-flash-lite",
-        "coding": "deepseek-v3.2",
-        "complex_reasoning": "mimo-v2-pro",
-        "multimodal": "gemini-3.1-pro",
-        "default": "qwen3.5-flash-02-23",
+    # ── Intelligent Routing & Capabilities ───────────────────────
+    model_capabilities: Dict[str, Dict[str, Any]] = {
+        "qwen/qwen3.5-flash-02-23": {
+            "role": "default_orchestrator",
+            "reasoning_level": 6, "coding_level": 6, "planning_level": 5,
+        },
+        "google/gemini-2.5-flash-lite": {
+            "role": "efficient_multimodal_processor",
+            "reasoning_level": 7, "coding_level": 6, "planning_level": 6,
+        },
+        "deepseek/deepseek-v4-pro": {
+            "role": "agentic_reasoning_engine",
+            "reasoning_level": 9, "coding_level": 10, "planning_level": 10,
+        },
+        "deepseek/deepseek-v4-flash": {
+            "role": "software_engineering_specialist",
+            "reasoning_level": 8, "coding_level": 9.5, "planning_level": 7,
+        },
+        "xiaomi/mimo-v2.5-pro": {
+            "role": "maximum_intelligence_engine",
+            "reasoning_level": 10, "coding_level": 9, "planning_level": 9,
+        },
+    }
+
+    complexity_routing: Dict[str, str] = {
+        "0-3": "qwen/qwen3.5-flash-02-23",
+        "4-6": "google/gemini-2.5-flash-lite",
+        "7-9": "deepseek/deepseek-v4-flash",
+        "10-12": "deepseek/deepseek-v4-pro",
+        "13+": "xiaomi/mimo-v2.5-pro",
     }
     
     # ── Chat enhancements ─────────────────────────────────────
     default_chat_model: str = "qwen/qwen3.5-flash-02-23"
-    system_prompt: str = "You are Mira, a helpful AI assistant with multi-model capabilities and long-term memory. You can reason, code, analyze files, and use tools. IMPORTANT: You have a long-term memory system. When you are provided with 'Relevant past conversation snippets retrieved from memory', you MUST use them and acknowledge you remember them. NEVER claim you cannot remember past sessions or retain personal details, because your memory system explicitly provides this to you."
+    system_prompt: str = "You are Mira, an intelligent Orchestrator AI. You have access to expert sub-agents via the `ask_expert_model` tool. You also have a long-term memory system. When provided with memory snippets, you MUST use them and acknowledge them." # IMPORTANT: DeepSeek is highly capable of general logic, prompt engineering, and complex writing—it is NOT just for coding. Do not force it to write code unless the user explicitly asks for code. Use Mimo-v2.5 for complex reasoning, especially when the user provides multimodal inputs (Images, Audio, Video).
     summary_max_tokens: int = 400
     tag_extraction_model: Optional[str] = None
 
@@ -146,11 +171,12 @@ class ConfigManager:
     def _map_model_name(self, model_name: str) -> str:
         """Map friendly model names to OpenRouter model IDs."""
         mapping = {
-            "qwen-2.5-32b-instruct": "qwen/qwen-2.5-32b-instruct",
+            "qwen-2.5-32b-instruct": "qwen/qwen3.5-flash-02-23",
             "gemini-2.5-flash-lite": "google/gemini-2.5-flash-lite",
-            "mimo-v2-pro": "mimo/mimo-v2-pro",
-            "deepseek-v3.2": "deepseek/deepseek-v3.2",
-            "gemini-3.1-pro": "google/gemini-3.1-pro",
+            "mimo-v2.5-pro": "xiaomi/mimo-v2.5-pro",
+            "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+            "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
+            # "gemini-3.1-pro": "google/gemini-3.1-pro",
             "gpt-oss-120b": "openai/gpt-oss-120b",
         }
         return mapping.get(model_name, model_name)
