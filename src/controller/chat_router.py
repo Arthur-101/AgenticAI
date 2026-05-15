@@ -337,7 +337,7 @@ class ChatRouter:
         messages = context.assembled_messages.copy()
         tools_schema = self.tool_manager.get_openai_tools_schema()
         
-        max_iterations = 15     # To prevent infinite loops in case of tool call issues, we set a max iteration limit. Each iteration represents one assistant response + tool execution cycle.
+        max_iterations = 25     # To prevent infinite loops in case of tool call issues, we set a max iteration limit. Each iteration represents one assistant response + tool execution cycle.
         total_tokens = 0
         final_model_id = ""
         
@@ -449,6 +449,12 @@ class ChatRouter:
                             "content": full_content
                         }
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+
+                    else:
+                        import sys
+                        from datetime import datetime
+                        current_time = datetime.now().strftime("%H:%M:%S")
+                        print(f"[{current_time}] 🔧 Tool completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
 
                     messages.append(Message(
                         role="tool",

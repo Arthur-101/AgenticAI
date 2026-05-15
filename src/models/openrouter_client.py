@@ -187,7 +187,9 @@ class OpenRouterClient:
         max_retries = 2
         for attempt in range(max_retries + 1):
             try:
-                print(f"🤖 Requesting completion from model: {model_id} (Attempt {attempt+1}/{max_retries+1})...")
+                from datetime import datetime
+                current_time = datetime.now().strftime("%H:%M:%S")
+                print(f"[{current_time}] 🤖 Requesting completion from model: {model_id} (Attempt {attempt+1}/{max_retries+1})...")
                 response = await self.client.post(
                     f"{self.base_url}/chat/completions",
                     json=request.dict(exclude_none=True),
@@ -208,7 +210,9 @@ class OpenRouterClient:
                     usage = data["usage"]
                     input_tokens = usage.get("prompt_tokens", 0)
                     output_tokens = usage.get("completion_tokens", 0)
-                    print(f"✅ Response received from {model_id} (Tokens: {input_tokens} in, {output_tokens} out)")
+                    from datetime import datetime
+                    current_time = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{current_time}] ✅ Response received from {model_id} (Tokens: {input_tokens} in, {output_tokens} out)")
                     config.track_cost(model_id, input_tokens, output_tokens)
                 
                 return ChatResponse(**data)
