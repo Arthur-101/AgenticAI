@@ -359,19 +359,16 @@ class BasicTools:
             import json
             import base64
             
-            # Map friendly names to actual model IDs
-            mapping = {
-                "qwen": config.settings.model_qwen,
-                "gemini": config.settings.model_gemini_flash,
-                "gemini_flash": config.settings.model_gemini_flash,
-                # "gemini_pro": config.settings.model_gemini_pro,
-                "deepseek": config.settings.model_deepseek,
-                "deepseek_flash": config.settings.model_deepseek,
-                "deepseek_pro": config.settings.model_deepseek_pro,
-                "mimo": config.settings.model_mimo,
-                "mimo_pro": config.settings.model_mimo,
-            }
-            
+            # Dynamically map friendly names back to actual model IDs based on config
+            mapping = {}
+            for model_id in config.settings.model_capabilities.keys():
+                if "qwen" in model_id: continue
+                friendly_name = model_id.split("/")[-1].replace(".", "").replace("-", "_")
+                if "mimo" in model_id: friendly_name = "mimo_pro"
+                elif "gemini" in model_id and "flash" in model_id: friendly_name = "gemini_flash"
+                elif "gemini" in model_id and "pro" in model_id: friendly_name = "gemini_pro"
+                mapping[friendly_name] = model_id
+                
             actual_model = mapping.get(model_name.lower(), model_name)
             
             # Prepare context from files if provided
