@@ -38,6 +38,7 @@ class ChatRequest(BaseModel):
     stream: bool = Field(default=False, description="Whether to stream response")
     tools: Optional[List[Dict[str, Any]]] = Field(default=None, description="Available tools in OpenAI schema")
     tool_choice: Optional[str] = Field(default=None, description="Tool choice mode (e.g., 'auto')")
+    provider: Optional[Dict[str, Any]] = Field(default=None, description="Provider-specific parameters")
 
 
 class UsageDetails(BaseModel):
@@ -167,6 +168,10 @@ class OpenRouterClient:
                 config.settings.max_tokens_per_request,
                 self.model_capabilities[model_type].max_tokens
             )
+            
+        provider = None
+        if "deepseek" in model_id.lower():
+            provider = {"parameters": {"reasoning_effort": "max"}}
         
         request = ChatRequest(
             model=model_id,
@@ -176,6 +181,7 @@ class OpenRouterClient:
             stream=stream,
             tools=tools,
             tool_choice="auto" if tools else None,
+            provider=provider,
         )
         
         max_retries = 2
@@ -233,6 +239,10 @@ class OpenRouterClient:
                 config.settings.max_tokens_per_request,
                 self.model_capabilities[model_type].max_tokens
             )
+            
+        provider = None
+        if "deepseek" in model_id.lower():
+            provider = {"parameters": {"reasoning_effort": "max"}}
         
         request = ChatRequest(
             model=model_id,
@@ -240,6 +250,7 @@ class OpenRouterClient:
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
+            provider=provider,
         )
         
         try:
