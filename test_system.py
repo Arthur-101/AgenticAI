@@ -161,7 +161,8 @@ async def test_model_router():
         ]
         
         for task, expected_type in test_tasks:
-            task_type = router.analyzer.analyze_task(task)
+            complexity = router.analyzer.calculate_complexity(task)
+            task_type = router.analyzer.determine_task_type(task.lower(), complexity)
             print(f"  Task: '{task[:30]}...' → {task_type.value} (expected: {expected_type})")
         
         # Test routing decisions
@@ -174,11 +175,11 @@ async def test_model_router():
         
         for user_input in test_inputs:
             decision = await router.route_task(user_input)
-            print(f"  Input: '{user_input[:30]}...' → Model: {decision.model_type.value}, Confidence: {decision.confidence:.2f}")
+            print(f"  Input: '{user_input[:30]}...' → Model: {decision.model_type.value}, Complexity: {decision.complexity_score}")
         
         # Test routing stats
         stats = router.get_routing_stats()
-        print(f"✓ Routing stats: {len(stats['routing_map'])} task types mapped")
+        print(f"✓ Routing stats: {stats['status']}")
         
         return True
         

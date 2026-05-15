@@ -18,7 +18,6 @@ class ModelType(Enum):
     GEMINI_FLASH = "gemini_flash"
     MIMO = "mimo"
     DEEPSEEK = "deepseek"
-    GEMINI_PRO = "gemini_pro"
 
 
 class Message(BaseModel):
@@ -100,7 +99,6 @@ class OpenRouterClient:
             ModelType.GEMINI_FLASH: config.settings.model_gemini_flash,
             ModelType.MIMO: config.settings.model_mimo,
             ModelType.DEEPSEEK: config.settings.model_deepseek,
-            ModelType.GEMINI_PRO: config.settings.model_gemini_pro,
         }
         
         # Model capabilities (approximate, based on documentation)
@@ -140,15 +138,6 @@ class OpenRouterClient:
                 coding_strength=0.9,
                 speed=0.7,
                 cost_per_token=0.21,
-            ),
-            ModelType.GEMINI_PRO: ModelCapabilities(
-                max_tokens=32768,
-                supports_tools=True,
-                supports_vision=True,
-                reasoning_strength=0.8,
-                coding_strength=0.7,
-                speed=0.5,
-                cost_per_token=3.125,
             ),
         }
         
