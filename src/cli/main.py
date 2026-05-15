@@ -161,7 +161,6 @@ async def process_message(
             "gemini_flash": ModelType.GEMINI_FLASH,
             "mimo": ModelType.MIMO,
             "deepseek": ModelType.DEEPSEEK,
-            "gemini_pro": ModelType.GEMINI_PRO,
         }
         force_model = model_map.get(model_str)
     

@@ -63,8 +63,8 @@ class Settings(BaseSettings):
         "qwen/qwen3.5-flash-02-23": {
             "role": "default_orchestrator",
             "supports": {"text": True, "image": True, "video": True, "audio": False, "multimodal_reasoning": True, "tool_use": True, "long_context": True},
-            "strengths": ["fast_chat", "multimodal_parsing", "conversation", "intent_classification", "tool_routing", "lightweight_coding", "memory_handling"],
-            "best_use_cases": ["general_chat", "screenshots", "small_video_analysis", "lightweight_debugging", "tool_orchestration", "routing", "OCR", "quick_multimodal_tasks"],
+            "strengths": ["fast_chat", "videos", "multimodal_parsing", "conversation", "intent_classification", "tool_routing", "lightweight_coding", "memory_handling"],
+            "best_use_cases": ["general_chat", "screenshots", "videos", "small_video_analysis", "lightweight_debugging", "tool_orchestration", "routing", "OCR", "quick_multimodal_tasks"],
             "reasoning_level": 6, "coding_level": 6, "planning_level": 5,
         },
         "google/gemini-2.5-flash-lite": {

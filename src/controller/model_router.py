@@ -98,10 +98,8 @@ class ModelRouter:
         # Simple heuristic to map config model string back to ModelType enum
         if "qwen" in model_id.lower():
             return ModelType.QWEN
-        elif "gemini-2" in model_id.lower():
+        elif "gemini" in model_id.lower():
             return ModelType.GEMINI_FLASH
-        elif "gemini-3" in model_id.lower():
-            return ModelType.GEMINI_PRO
         elif "mimo" in model_id.lower():
             return ModelType.MIMO
         elif "deepseek" in model_id.lower():

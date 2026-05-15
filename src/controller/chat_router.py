@@ -307,7 +307,6 @@ class ChatRouter:
                 "gemini-flash": ModelType.GEMINI_FLASH,
                 "mimo": ModelType.MIMO,
                 "deepseek": ModelType.DEEPSEEK,
-                "gemini-pro": ModelType.GEMINI_PRO,
             }
             return override_map.get(model_override.lower(), ModelType.GEMINI_FLASH)
         
@@ -320,9 +319,10 @@ class ChatRouter:
             "qwen-2.5-32b-instruct": ModelType.QWEN,
             "qwen/qwen3.5-flash-02-23": ModelType.QWEN,
             "qwen3.5-flash-02-23": ModelType.QWEN,
-            "mimo-v2-pro": ModelType.MIMO,
-            "deepseek-v3.2": ModelType.DEEPSEEK,
-            "gemini-3.1-pro": ModelType.GEMINI_PRO,
+            "xiaomi/mimo-v2.5-pro": ModelType.MIMO,
+            "mimo-v2.5-pro": ModelType.MIMO,
+            "deepseek/deepseek-v4-flash": ModelType.DEEPSEEK,
+            "deepseek/deepseek-v4-pro": ModelType.DEEPSEEK,
         }
         
         return model_map.get(default_model, ModelType.QWEN)
