@@ -130,6 +130,62 @@ async def new_session() -> Dict[str, str]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+# We need the main event loop to send websocket messages from the read thread
+main_loop = None
+
+@app.on_event("startup")
+async def startup_event():
+    global main_loop
+    main_loop = asyncio.get_running_loop()
+    
+    def on_terminal_output(data: str):
+        if main_loop and not main_loop.is_closed():
+            asyncio.run_coroutine_threadsafe(manager.broadcast(data), main_loop)
+            
+    terminal_manager.register_callback(on_terminal_output)
+
+@app.websocket("/ws/terminal")
+async def websocket_terminal(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        if not terminal_manager.is_running:
+            terminal_manager.start()
+            
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "input":
+                    terminal_manager.write(msg.get("data", ""))
+                elif msg.get("type") == "resize":
+                    terminal_manager.resize(msg.get("rows", 24), msg.get("cols", 80))
+            except json.JSONDecodeError:
+                # Fallback to plain text if not JSON
+                terminal_manager.write(data)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
 @app.get("/health")
 async def health_check() -> Dict[str, Any]:
     """Health check endpoint."""

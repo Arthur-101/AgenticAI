@@ -10,6 +10,7 @@ import traceback
 from typing import Dict, Any, Optional
 import os
 import asyncio
+import subprocess
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -28,6 +29,21 @@ class EmbeddedBackend:
             memory_store=self.memory
         )
         print("INFO: Embedded backend initialized", file=sys.stderr)
+        
+        # Start the WebSocket/HTTP server in the background
+        self.chat_server_process = subprocess.Popen(
+            [sys.executable, os.path.join(os.path.dirname(__file__), "chat_server.py")],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        print("INFO: Chat server started in background", file=sys.stderr)
+        
+    def __del__(self):
+        if hasattr(self, 'chat_server_process') and self.chat_server_process:
+            try:
+                self.chat_server_process.terminate()
+            except:
+                pass
     
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process a JSON-RPC request and return response."""

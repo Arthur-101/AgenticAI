@@ -172,7 +172,7 @@ class BasicTools:
             }
     
     def execute_command(self, command: str, timeout: int = 30) -> Dict[str, Any]:
-        """Execute a shell command."""
+        """Execute a shell command in the shared stateful terminal."""
         try:
             # Security check: disallow dangerous commands
             dangerous_patterns = ["rm -rf", "format", "dd if=", "mkfs", ":(){:|:&};:"]
@@ -184,31 +184,16 @@ class BasicTools:
                         "message": f"Command contains potentially dangerous pattern: {pattern}",
                     }
             
-            # Execute command
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+            # Use the stateful terminal manager
+            from src.tools.terminal_manager import terminal_manager
+            
+            result = terminal_manager.execute_agent_command(
+                command=command,
+                timeout=timeout
             )
             
-            return {
-                "success": result.returncode == 0,
-                "result": {
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode,
-                },
-                "message": f"Command executed with return code: {result.returncode}",
-            }
+            return result
             
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "result": None,
-                "message": f"Command timed out after {timeout} seconds",
-            }
         except Exception as e:
             return {
                 "success": False,
