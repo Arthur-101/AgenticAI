@@ -421,40 +421,31 @@ class ChatRouter:
                         result_str = result_str[:20000] + "\n...[truncated]"
                     
                     if name == "ask_expert_model":
-                        sub_model = arguments.get("model_name", "unknown")
-                        sub_prompt = arguments.get("prompt", "")
-                        
-                        # Make sure to grab any file paths sent to the sub-agent
-                        sub_files = arguments.get("file_paths", [])
-                        file_context_str = ""
-                        if sub_files:
-                            file_context_str = f" **[Files attached: {', '.join([Path(p).name for p in sub_files])}]**"
-                        
-                        full_content = f"**Task:** {sub_prompt}{file_context_str}\n\n**Response:**\n{result_str}"
-                        
-                        # Save the sub_agent message
-                        self.memory_store.save_message(
-                            session_id=session_id,
-                            role="sub_agent",
-                            content_raw=full_content,
-                            model_id=sub_model,
-                            tokens_used=0,
-                        )
-                        
-                        # Print special JSON string for Tauri frontend
-                        import sys
+                        # Send this specific sub-agent output to the UI
                         log_msg = {
-                            "type": "sub_agent_msg",
-                            "model": sub_model,
-                            "content": full_content
+                            "content": f"**Task**: {arguments.get('prompt', '')[:100]}...\n\n**Result**:\n{tool_result.get('result', '')}",
+                            "model": arguments.get('model_name', 'sub-agent')
                         }
+                        import sys
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
-
+                    elif name == "execute_command":
+                        cmd = arguments.get('command', '')
+                        log_msg = {
+                            "content": f"**Executed Command**:\n```bash\n{cmd}\n```\n**Exit Code**: {tool_result.get('result', {}).get('returncode', 'Unknown')}",
+                            "model": "Terminal"
+                        }
+                        import sys
+                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
                     else:
                         import sys
                         from datetime import datetime
                         current_time = datetime.now().strftime("%H:%M:%S")
                         print(f"[{current_time}] 🔧 Tool completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
+                        log_msg = {
+                            "content": f"**Used Tool**: `{name}`",
+                            "model": "System Tool"
+                        }
+                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
 
                     messages.append(Message(
                         role="tool",
@@ -464,7 +455,8 @@ class ChatRouter:
                     ))
                 
                 # After appending all tool results, loop repeats to get next assistant response
-                print(f"🔄 Tool execution complete. Requesting final answer...")
+                print(f"🔄 Tool execution complete. Requesting final answer...", file=sys.stderr, flush=True)
+
                 
             except Exception as e:
                 print(f"Error getting assistant response: {e}")
