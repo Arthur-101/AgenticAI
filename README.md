@@ -145,8 +145,10 @@ data/                 # Database and document storage
 - [x] ChromaDB integration (Vector DB for RAG memory)
 
 ### Phase 3: Advanced Features
+- [x] Intelligent Routing & Complexity Engine (0-13+ score)
 - [x] Tool execution framework (MCP-style)
 - [x] Advanced memory (Redis)
+- [ ] Shared Stateful Terminal (xterm.js + TerminalManager) accessible by User and Agents
 - [ ] System tray with hidden background service (Windows specific)
 - [ ] OCR/image processing
 - [ ] Audio/video transcription (via Gemini Flash Lite)

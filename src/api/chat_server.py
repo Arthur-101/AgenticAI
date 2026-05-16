@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.controller.chat_router import ChatRouter
 from src.memory.sqlite_store import SQLiteMemoryStore
+from src.tools.terminal_manager import terminal_manager
 
 
 app = FastAPI(title="AgenticAI Chat API", version="1.0.0")

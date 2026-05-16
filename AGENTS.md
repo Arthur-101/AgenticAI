@@ -107,7 +107,7 @@ User Input → Controller → Decision → Model/Tool → Aggregation → Output
 ### 2. Phase Approach
 **Phase 1**: Core CLI with model switching + basic memory
 **Phase 2**: Background service + system tray UI + Document RAG
-**Phase 3**: Tool Execution (MCP-style) [COMPLETED] + Advanced features (Redis, System Tray polish, Gemini Audio/Video processing)
+**Phase 3**: Tool Execution (MCP-style), Intelligent Routing, Advanced Redis Memory [COMPLETED] + Stateful Shared Terminal, System Tray polish, Gemini Audio/Video processing [IN PROGRESS]
 
 ### 3. Memory Architecture
 - **Short-term**: In-memory conversation context
