@@ -30,20 +30,21 @@ class EmbeddedBackend:
         )
         print("INFO: Embedded backend initialized", file=sys.stderr)
         
-        # Start the WebSocket/HTTP server in the background
-        self.chat_server_process = subprocess.Popen(
-            [sys.executable, os.path.join(os.path.dirname(__file__), "chat_server.py")],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        print("INFO: Chat server started in background", file=sys.stderr)
+        # Run uvicorn server in a background thread so it shares memory and singletons
+        import threading
+        import uvicorn
+        from src.api.chat_server import app
+        
+        def run_uvicorn():
+            port = int(os.getenv("AGENTICAI_API_PORT", "8000"))
+            uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
+            
+        self.chat_server_thread = threading.Thread(target=run_uvicorn, daemon=True)
+        self.chat_server_thread.start()
+        print("INFO: Chat server started in background thread", file=sys.stderr)
         
     def __del__(self):
-        if hasattr(self, 'chat_server_process') and self.chat_server_process:
-            try:
-                self.chat_server_process.terminate()
-            except:
-                pass
+        pass
     
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process a JSON-RPC request and return response."""
