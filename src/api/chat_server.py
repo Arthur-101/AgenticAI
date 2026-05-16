@@ -164,9 +164,13 @@ async def startup_event():
             asyncio.run_coroutine_threadsafe(manager.broadcast(data), main_loop)
             
     terminal_manager.register_callback(on_terminal_output)
+    import sys
+    print(f"DEBUG: chat_server registered callback to terminal instance {id(terminal_manager)}", file=sys.stderr, flush=True)
 
 @app.websocket("/ws/terminal")
 async def websocket_terminal(websocket: WebSocket):
+    import sys
+    print(f"DEBUG: websocket connected, terminal manager instance is {id(terminal_manager)}", file=sys.stderr, flush=True)
     await manager.connect(websocket)
     try:
         if not terminal_manager.is_running:

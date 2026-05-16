@@ -123,7 +123,11 @@ class TerminalManager:
 
     def execute_agent_command(self, command: str, workdir: Optional[str] = None, timeout: int = 30) -> Dict[str, Any]:
         """Executes a command synchronously for an AI agent, enforcing OpenCode-style restrictions."""
+        import sys
+        print(f"DEBUG: execute_agent_command called with '{command}' in terminal instance {id(self)}", file=sys.stderr, flush=True)
+        print(f"DEBUG: callbacks registered: {len(self.output_callbacks)}", file=sys.stderr, flush=True)
         if not self.is_running:
+            print("DEBUG: starting terminal manager", file=sys.stderr, flush=True)
             self.start()
             
         with self._agent_lock:

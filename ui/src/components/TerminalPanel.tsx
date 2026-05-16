@@ -38,39 +38,48 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose }) => {
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Connect to WebSocket
-    // Using fixed localhost:8000 since backend runs there
-    const ws = new WebSocket(`ws://127.0.0.1:8000/ws/terminal`);
-    wsRef.current = ws;
+    let reconnectTimeoutId: any;
+    let isComponentMounted = true;
 
-    ws.onopen = () => {
-      term.writeln('\x1b[32mConnected to AgenticAI Terminal\x1b[0m\r\n');
+    const connectWebSocket = () => {
+      if (!isComponentMounted) return;
       
-      // Send initial resize
-      ws.send(JSON.stringify({
-        type: 'resize',
-        rows: term.rows,
-        cols: term.cols
-      }));
+      const ws = new WebSocket(`ws://127.0.0.1:8000/ws/terminal`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        term.writeln('\x1b[32mConnected to AgenticAI Terminal\x1b[0m\r\n');
+        
+        // Send initial resize
+        ws.send(JSON.stringify({
+          type: 'resize',
+          rows: term.rows,
+          cols: term.cols
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        term.write(event.data);
+      };
+
+      ws.onerror = (error) => {
+        console.error('Terminal WebSocket error:', error);
+      };
+
+      ws.onclose = () => {
+        if (!isComponentMounted) return;
+        term.writeln('\r\n\x1b[33mTerminal connection closed. Reconnecting in 2 seconds...\x1b[0m\r\n');
+        clearTimeout(reconnectTimeoutId);
+        reconnectTimeoutId = setTimeout(connectWebSocket, 2000);
+      };
     };
 
-    ws.onmessage = (event) => {
-      term.write(event.data);
-    };
-
-    ws.onerror = (error) => {
-      term.writeln('\r\n\x1b[31mTerminal connection error.\x1b[0m\r\n');
-      console.error('Terminal WebSocket error:', error);
-    };
-
-    ws.onclose = () => {
-      term.writeln('\r\n\x1b[33mTerminal connection closed.\x1b[0m\r\n');
-    };
+    connectWebSocket();
 
     // Handle user input
     term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'input', data }));
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'input', data }));
       }
     });
 
@@ -91,8 +100,11 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose }) => {
     window.addEventListener('resize', handleResize);
 
     return () => {
+      isComponentMounted = false;
       window.removeEventListener('resize', handleResize);
+      clearTimeout(reconnectTimeoutId);
       if (wsRef.current) {
+        wsRef.current.onclose = null; // Prevent reconnect loop on unmount
         wsRef.current.close();
       }
       if (xtermRef.current) {
