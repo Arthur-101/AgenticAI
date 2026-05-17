@@ -143,10 +143,10 @@ class TerminalManager:
             
             full_command = ""
             if workdir:
-                full_command += f"cd '{workdir}' && "
+                full_command += f"cd '{workdir}'\n"
             
-            # Use grouped execution to ensure stderr and stdout are captured and the exit code is saved
-            full_command += f"({command}); echo \"\n{delim}_$?\" \n"
+            # Execute command directly (no subshell) to preserve environment variables
+            full_command += f"{command}\necho \"\n{delim}_$?\"\n"
             
             # Echo to the UI that an agent is running a command
             agent_msg = f"\r\n\x1b[36m[Agent Executing]:\x1b[0m {command}\r\n"

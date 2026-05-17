@@ -430,8 +430,19 @@ class ChatRouter:
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
                     elif name == "execute_command":
                         cmd = arguments.get('command', '')
+                        output = tool_result.get('result', {}).get('stdout', '').strip()
+                        exit_code = tool_result.get('result', {}).get('returncode', 'Unknown')
+                        
+                        output_block = ""
+                        if output:
+                            if len(output) > 2000:
+                                output_ui = output[:2000] + "\n...[truncated for UI]"
+                            else:
+                                output_ui = output
+                            output_block = f"\n\n**Output**:\n```text\n{output_ui}\n```"
+                            
                         log_msg = {
-                            "content": f"**Executed Command**:\n```bash\n{cmd}\n```\n**Exit Code**: {tool_result.get('result', {}).get('returncode', 'Unknown')}",
+                            "content": f"**Executed Command**:\n```bash\n{cmd}\n```\n**Exit Code**: {exit_code}{output_block}",
                             "model": "Terminal"
                         }
                         import sys
