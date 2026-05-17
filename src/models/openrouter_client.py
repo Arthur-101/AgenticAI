@@ -99,7 +99,7 @@ class OpenRouterClient:
             ModelType.QWEN: config.settings.model_qwen,
             ModelType.GEMINI_FLASH: config.settings.model_gemini_flash,
             ModelType.MIMO: config.settings.model_mimo,
-            ModelType.DEEPSEEK: config.settings.model_deepseek,
+            ModelType.DEEPSEEK: config.settings.model_deepseek_flash,
         }
         
         # Model capabilities (approximate, based on documentation)

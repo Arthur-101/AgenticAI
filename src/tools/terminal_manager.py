@@ -176,7 +176,11 @@ class TerminalManager:
                 
             # Truncate output if too long (OpenCode restriction)
             max_len = 50000
-            output = self._current_agent_buffer.strip()
+            
+            # Remove ANSI escape sequences (like \x1b[?2004l) before sending to AI or UI
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            clean_output = ansi_escape.sub('', self._current_agent_buffer)
+            output = clean_output.strip()
             
             if len(output) > max_len:
                 output = output[:max_len] + f"\n... [Output truncated to {max_len} bytes]"

@@ -387,8 +387,7 @@ def show_config():
     table.add_row("Qwen Model", settings.model_qwen)
     table.add_row("Gemini Flash", settings.model_gemini_flash)
     table.add_row("Mimo Model", settings.model_mimo)
-    table.add_row("DeepSeek Model", settings.model_deepseek)
-    table.add_row("Gemini Pro", settings.model_gemini_pro)
+    table.add_row("DeepSeek Model", settings.model_deepseek_flash)
     
     # Cost settings
     table.add_row("Cost Limit", f"${settings.cost_limit}")

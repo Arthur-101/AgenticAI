@@ -25,7 +25,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose }) => {
         cursor: '#ffffff',
         selectionBackground: 'rgba(255, 255, 255, 0.3)',
       },
-      fontFamily: '"Fira Code", monospace',
+      fontFamily: import.meta.env.VITE_TERMINAL_FONT || '"Fira Code", monospace',
       fontSize: 14,
     });
     
