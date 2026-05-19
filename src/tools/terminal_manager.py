@@ -165,22 +165,69 @@ class TerminalManager:
                     timed_out = True
                     break
                     
-                match = re.search(f"{delim}_(\\d+)", self._current_agent_buffer)
-                if match:
-                    return_code = int(match.group(1))
-                    # Remove the delimiter and everything after it from the buffer
-                    self._current_agent_buffer = self._current_agent_buffer[:match.start()]
+                if re.search(f"{delim}_(\\d+)", self._current_agent_buffer):
                     break
                     
                 time.sleep(0.1)
                 
-            # Truncate output if too long (OpenCode restriction)
-            max_len = 50000
+            # We need to strip out the echoed command from the buffer, 
+            # as PTYs echo stdin to stdout by default.
             
-            # Remove ANSI escape sequences (like \x1b[?2004l) before sending to AI or UI
-            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            clean_output = ansi_escape.sub('', self._current_agent_buffer)
-            output = clean_output.strip()
+            # The command we sent was echoed back to us (potentially with ANSI codes)
+            # Find the position of our delimiter output
+            delim_match = re.search(f"{delim}_(\\d+)", self._current_agent_buffer)
+            if delim_match:
+                return_code = int(delim_match.group(1))
+                
+                # Everything before the delimiter output is our buffer
+                raw_output = self._current_agent_buffer[:delim_match.start()]
+                
+                # The raw_output will contain:
+                # 1. The echoed cd command (if any)
+                # 2. The output of the cd command (if any)
+                # 3. The echoed actual command
+                # 4. The actual output
+                # 5. The echoed echo command
+                
+                # Split by lines
+                lines = raw_output.split("\n")
+                
+                # Filter out the lines that are just our commands being echoed
+                # Also strip carriage returns from the end of lines
+                clean_lines = []
+                cmd_parts = command.split('\n')
+                for line in lines:
+                    line_clean = line.strip('\r')
+                    
+                    # Skip empty lines at the very beginning
+                    if not line_clean and not clean_lines:
+                        continue
+                        
+                    # Simple heuristic: if the line exactly matches part of our command, 
+                    # or the cd command, or the echo command, skip it
+                    is_echo = False
+                    if line_clean == f"cd '{workdir}'":
+                        is_echo = True
+                    elif line_clean.startswith(f"echo \"\n{self._agent_delimiter}"):
+                        is_echo = True
+                    else:
+                        for part in cmd_parts:
+                            if part and line_clean.endswith(part):
+                                is_echo = True
+                                break
+                                
+                    if not is_echo:
+                        clean_lines.append(line_clean)
+                        
+                output = "\n".join(clean_lines).strip()
+                
+                # Finally, strip any ANSI escape sequences that might have leaked through
+                ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                output = ansi_escape.sub('', output).strip()
+            else:
+                # If we timed out
+                output = "Command timed out."
+                return_code = -1
             
             if len(output) > max_len:
                 output = output[:max_len] + f"\n... [Output truncated to {max_len} bytes]"

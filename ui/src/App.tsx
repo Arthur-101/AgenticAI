@@ -27,11 +27,14 @@ function App() {
         </Button>
       </div>
       
-      {showTerminal && (
-        <div style={{ width: '40%', height: '100%', borderLeft: '1px solid #333' }}>
-          <TerminalPanel onClose={() => setShowTerminal(false)} />
-        </div>
-      )}
+      <div style={{ 
+        width: '40%', 
+        height: '100%', 
+        borderLeft: '1px solid #333',
+        display: showTerminal ? 'block' : 'none'
+      }}>
+        <TerminalPanel onClose={() => setShowTerminal(false)} isVisible={showTerminal} />
+      </div>
     </div>
   );
 }

@@ -5,9 +5,10 @@ import '@xterm/xterm/css/xterm.css';
 
 interface TerminalPanelProps {
   onClose?: () => void;
+  isVisible?: boolean;
 }
 
-const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose }) => {
+const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -112,6 +113,22 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose }) => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isVisible && fitAddonRef.current) {
+      // Need a small timeout to allow display:block to take effect before measuring
+      setTimeout(() => {
+        fitAddonRef.current?.fit();
+        if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
+          wsRef.current.send(JSON.stringify({
+            type: 'resize',
+            rows: xtermRef.current.rows,
+            cols: xtermRef.current.cols
+          }));
+        }
+      }, 100);
+    }
+  }, [isVisible]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
