@@ -13,6 +13,7 @@ from src.memory.redis_store import redis_store
 from src.utils.config import config
 from src.processors.file_processor import FileProcessor
 from src.tools.basic_tools import ToolManager
+from src.tools.terminal_manager import terminal_manager
 import json
 
 
@@ -286,6 +287,11 @@ class ChatRouter:
                 vector_context = "\n".join(vector_context_texts)
                 context_messages.insert(-1, Message(role="system", content=f"Relevant factual memories about the user/project retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Use these retrieved memories ONLY if they are directly relevant to the user's current request. Do not mention them if they are unrelated."))
         
+        # Add live terminal state
+        term_history = terminal_manager.get_history(lines=60)
+        if term_history and term_history.strip():
+            context_messages.insert(-1, Message(role="system", content=f"--- CURRENT TERMINAL STATE ---\n{term_history}\n--- END TERMINAL STATE ---\n\nSYSTEM INSTRUCTION: This is the live output of the shared terminal. You can see the commands the user ran and their outputs. Use this to understand the current state and answer the user's questions."))
+            
         return ChatContext(
             system_prompt=system_prompt,
             recent_summaries=recent_summaries,

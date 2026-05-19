@@ -6,14 +6,14 @@ import fcntl
 import termios
 import struct
 import select
-import asyncio
 import time
 import re
-from typing import Callable, List, Optional, Tuple, Dict, Any
+import shlex
+from typing import Callable, List, Optional, Dict, Any
 import sys
 
 class TerminalManager:
-    """Manages a shared stateful terminal session for both user and AI agents."""
+    """Manages a shared stateful terminal session using tmux for both user and AI agents."""
     
     _instance = None
     
@@ -29,25 +29,21 @@ class TerminalManager:
         self.output_callbacks: List[Callable[[str], None]] = []
         self._read_thread: Optional[threading.Thread] = None
         self.is_running = False
+        self.session_name = "agenticai-shared"
         
         # Agent execution state
         self._agent_lock = threading.Lock()
-        self._current_agent_buffer = ""
-        self._waiting_for_agent = False
-        self._agent_delimiter = "---OPENDELIM---"
         
-    def start(self, cmd: str = "/bin/bash", workdir: str = "."):
-        """Starts the terminal session."""
+    def start(self, workdir: str = "."):
+        """Starts the terminal session using tmux."""
         if self.is_running:
             return
             
         if sys.platform != "win32":
             master_fd, slave_fd = pty.openpty()
-            # Disable echo on the slave so we don't read back our own commands when the agent runs them
-            attrs = termios.tcgetattr(slave_fd)
-            attrs[3] = attrs[3] & ~termios.ECHO
-            termios.tcsetattr(slave_fd, termios.TCSANOW, attrs)
+            # We no longer disable ECHO so that user inputs are echoed correctly in the UI.
 
+            cmd = ["tmux", "new-session", "-A", "-s", self.session_name]
             self.process = subprocess.Popen(
                 cmd,
                 preexec_fn=os.setsid,
@@ -67,8 +63,6 @@ class TerminalManager:
             self._read_thread = threading.Thread(target=self._read_loop, daemon=True)
             self._read_thread.start()
             
-            # Send initial command to set prompt and disable history so agent commands aren't saved
-            self.write("export PS1='\\u@\\h:\\w$ '\n")
         else:
             raise NotImplementedError("Windows PTY support requires pywinpty. Fallback not implemented.")
             
@@ -94,7 +88,11 @@ class TerminalManager:
             self.start()
             
         if self.fd is not None:
-            os.write(self.fd, data.encode("utf-8"))
+            try:
+                os.write(self.fd, data.encode("utf-8"))
+            except OSError as e:
+                print(f"Error writing to terminal: {e}", file=sys.stderr)
+                self.stop()
 
     def _read_loop(self):
         """Continuously reads from the PTY and triggers callbacks."""
@@ -109,173 +107,127 @@ class TerminalManager:
                         
                     decoded_output = output.decode("utf-8", errors="replace")
                     
-                    if self._waiting_for_agent:
-                        self._current_agent_buffer += decoded_output
-                        
                     for callback in self.output_callbacks:
                         try:
                             callback(decoded_output)
                         except Exception as e:
-                            print(f"Error in terminal callback: {e}")
+                            print(f"Error in terminal callback: {e}", file=sys.stderr)
             except OSError as e:
+                print(f"Terminal read error (likely closed): {e}", file=sys.stderr)
                 self.is_running = False
                 break
+                
+    def get_history(self, lines: int = 100) -> str:
+        """Retrieves the recent history of the terminal using tmux capture-pane."""
+        if not self.is_running:
+            return ""
+        try:
+            res = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-J", "-S", f"-{lines}", "-t", self.session_name],
+                capture_output=True, text=True, timeout=2
+            )
+            return res.stdout.strip()
+        except Exception as e:
+            return f"Error fetching history: {e}"
 
     def execute_agent_command(self, command: str, workdir: Optional[str] = None, timeout: int = 30) -> Dict[str, Any]:
         """Executes a command synchronously for an AI agent, enforcing OpenCode-style restrictions."""
-        import sys
-        print(f"DEBUG: execute_agent_command called with '{command}' in terminal instance {id(self)}", file=sys.stderr, flush=True)
-        print(f"DEBUG: callbacks registered: {len(self.output_callbacks)}", file=sys.stderr, flush=True)
         if not self.is_running:
-            print("DEBUG: starting terminal manager", file=sys.stderr, flush=True)
             self.start()
             
         with self._agent_lock:
-            self._waiting_for_agent = True
-            self._current_agent_buffer = ""
-            
-            # Prepare the command payload
-            # 1. Change directory if requested
-            # 2. Run command
-            # 3. Echo delimiter with exit code
             delimiter_uuid = str(time.time()).replace(".", "")
-            delim = f"{self._agent_delimiter}{delimiter_uuid}"
+            start_delim = f"---START---{delimiter_uuid}"
+            end_delim = f"---END---{delimiter_uuid}"
             
-            full_command = ""
+            # Prepare command
+            full_command = f"echo '{start_delim}'\n"
             if workdir:
-                full_command += f"cd '{workdir}'\n"
-            
-            # Execute command directly (no subshell) to preserve environment variables
-            full_command += f"{command}\necho \"\n{delim}_$?\"\n"
+                full_command += f"cd {shlex.quote(workdir)}\n"
+            full_command += f"{command}\necho \"\n{end_delim}_$?\"\n"
             
             # Echo to the UI that an agent is running a command
             agent_msg = f"\r\n\x1b[36m[Agent Executing]:\x1b[0m {command}\r\n"
             for cb in self.output_callbacks:
-                cb(agent_msg)
+                try:
+                    cb(agent_msg)
+                except Exception:
+                    pass
                 
             self.write(full_command)
             
             start_time = time.time()
             return_code = -1
             timed_out = False
+            raw_output = ""
             
-            # Wait for delimiter or timeout
             while True:
                 if time.time() - start_time > timeout:
                     timed_out = True
                     break
                     
-                if re.search(f"{delim}_(\\d+)", self._current_agent_buffer):
+                pane_content = self.get_history(lines=1000)
+                
+                start_occurrences = [m.start() for m in re.finditer(start_delim, pane_content)]
+                end_match = re.search(f"{end_delim}_(\\d+)", pane_content)
+                
+                if start_occurrences and end_match:
+                    return_code = int(end_match.group(1))
+                    output_start = start_occurrences[-1] + len(start_delim)
+                    raw_output = pane_content[output_start:end_match.start()].strip()
                     break
                     
                 time.sleep(0.1)
                 
-            # We need to strip out the echoed command from the buffer, 
-            # as PTYs echo stdin to stdout by default.
-            
-            # The command we sent was echoed back to us (potentially with ANSI codes)
-            # Find the position of our delimiter output
-            delim_match = re.search(f"{delim}_(\\d+)", self._current_agent_buffer)
-            if delim_match:
-                return_code = int(delim_match.group(1))
-                
-                # Everything before the delimiter output is our buffer
-                raw_output = self._current_agent_buffer[:delim_match.start()]
-                
-                # The raw_output will contain:
-                # 1. The echoed cd command (if any)
-                # 2. The output of the cd command (if any)
-                # 3. The echoed actual command
-                # 4. The actual output
-                # 5. The echoed echo command
-                
-                # Split by lines
-                lines = raw_output.split("\n")
-                
-                # Filter out the lines that are just our commands being echoed
-                # Also strip carriage returns from the end of lines
-                clean_lines = []
-                cmd_parts = command.split('\n')
-                for line in lines:
-                    line_clean = line.strip('\r')
-                    
-                    # Skip empty lines at the very beginning
-                    if not line_clean and not clean_lines:
-                        continue
-                        
-                    # Simple heuristic: if the line exactly matches part of our command, 
-                    # or the cd command, or the echo command, skip it
-                    is_echo = False
-                    if line_clean == f"cd '{workdir}'":
-                        is_echo = True
-                    elif line_clean.startswith(f"echo \"\n{self._agent_delimiter}"):
-                        is_echo = True
-                    else:
-                        for part in cmd_parts:
-                            if part and line_clean.endswith(part):
-                                is_echo = True
-                                break
-                                
-                    if not is_echo:
-                        # Clean up prompt residues like "saurav@Arthur-Grey:/mnt/e/Codes/AgenticAI$ "
-                        # Prompts typically don't have many spaces and end with $ or # or >
-                        if re.match(r'^[\w.0-9@-]+:.*?[\$#>]\s*$', line_clean):
-                            continue
-                        if line_clean == ">":
-                            continue
-                            
-                        clean_lines.append(line_clean)
-                        
-                output = "\n".join(clean_lines).strip()
-                
-                # Finally, strip any ANSI escape sequences that might have leaked through
-                ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-                output = ansi_escape.sub('', output).strip()
-                
-                # Also strip out the trailing shell prompt if it somehow snuck through multiline merging
-                output = re.sub(r'[\w.0-9@-]+:.*?[\$#>]\s*$', '', output).strip()
-                output = re.sub(r'\n>\s*$', '', output).strip()
-                # Secondary pass for prompt
-                lines = output.split('\n')
-                if lines and re.match(r'^[\w.0-9@-]+:.*?[\$#>]\s*$', lines[-1].strip()):
-                    output = '\n'.join(lines[:-1]).strip()
-            else:
-                # If we timed out
-                output = "Command timed out."
-                return_code = -1
-                
-            max_len = 50000
-            if len(output) > max_len:
-                output = output[:max_len] + f"\n... [Output truncated to {max_len} bytes]"
-                
-            self._waiting_for_agent = False
-            self._current_agent_buffer = ""
-            
             if timed_out:
-                # If timed out, try to send Ctrl+C to interrupt
-                self.write("\x03")
+                self.write("\x03")  # Send SIGINT
                 return {
                     "success": False,
-                    "result": {"stdout": output, "stderr": "", "returncode": -1},
+                    "result": {"stdout": "Command timed out.", "stderr": "", "returncode": -1},
                     "message": f"Command timed out after {timeout} seconds. Sent SIGINT.",
                 }
                 
+            # Clean up the trailing echo command from the raw output if it exists
+            lines = raw_output.split('\n')
+            clean_lines = []
+            for line in lines:
+                if f"---END---{delimiter_uuid}" in line:
+                    continue
+                if line.strip() == ">" or line.strip() == 'echo "':
+                    continue
+                clean_lines.append(line)
+                
+            final_output = "\n".join(clean_lines).strip()
+            
+            max_len = 50000
+            if len(final_output) > max_len:
+                final_output = final_output[:max_len] + f"\n... [Output truncated to {max_len} bytes]"
+                
             return {
                 "success": return_code == 0,
-                "result": {"stdout": output, "stderr": "", "returncode": return_code},
+                "result": {"stdout": final_output, "stderr": "", "returncode": return_code},
                 "message": f"Command executed with return code: {return_code}",
             }
 
     def stop(self):
-        """Stops the terminal session."""
+        """Stops the terminal session and cleans up resources."""
         self.is_running = False
+        
         if self.process:
-            self.process.terminate()
-            self.process.wait()
+            try:
+                # Kill the tmux session
+                subprocess.run(["tmux", "kill-session", "-t", self.session_name], capture_output=True)
+                self.process.terminate()
+                self.process.wait(timeout=2)
+            except Exception:
+                pass
             self.process = None
             
         if self.fd is not None:
-            os.close(self.fd)
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
             self.fd = None
             
 terminal_manager = TerminalManager.get_instance()
