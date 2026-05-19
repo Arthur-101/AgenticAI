@@ -217,6 +217,13 @@ class TerminalManager:
                                 break
                                 
                     if not is_echo:
+                        # Clean up prompt residues like "saurav@Arthur-Grey:/mnt/e/Codes/AgenticAI$ "
+                        # Prompts typically don't have many spaces and end with $ or # or >
+                        if re.match(r'^[\w.0-9@-]+:.*?[\$#>]\s*$', line_clean):
+                            continue
+                        if line_clean == ">":
+                            continue
+                            
                         clean_lines.append(line_clean)
                         
                 output = "\n".join(clean_lines).strip()
@@ -224,11 +231,20 @@ class TerminalManager:
                 # Finally, strip any ANSI escape sequences that might have leaked through
                 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
                 output = ansi_escape.sub('', output).strip()
+                
+                # Also strip out the trailing shell prompt if it somehow snuck through multiline merging
+                output = re.sub(r'[\w.0-9@-]+:.*?[\$#>]\s*$', '', output).strip()
+                output = re.sub(r'\n>\s*$', '', output).strip()
+                # Secondary pass for prompt
+                lines = output.split('\n')
+                if lines and re.match(r'^[\w.0-9@-]+:.*?[\$#>]\s*$', lines[-1].strip()):
+                    output = '\n'.join(lines[:-1]).strip()
             else:
                 # If we timed out
                 output = "Command timed out."
                 return_code = -1
-            
+                
+            max_len = 50000
             if len(output) > max_len:
                 output = output[:max_len] + f"\n... [Output truncated to {max_len} bytes]"
                 
