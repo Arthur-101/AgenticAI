@@ -43,7 +43,7 @@ class TerminalManager:
             master_fd, slave_fd = pty.openpty()
             # We no longer disable ECHO so that user inputs are echoed correctly in the UI.
 
-            cmd = ["tmux", "new-session", "-A", "-s", self.session_name]
+            cmd = ["tmux", "new-session", "-A", "-s", self.session_name, ";", "set-option", "-t", self.session_name, "status", "off"]
             self.process = subprocess.Popen(
                 cmd,
                 preexec_fn=os.setsid,
