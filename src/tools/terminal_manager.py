@@ -75,6 +75,12 @@ class TerminalManager:
         if self.fd and sys.platform != "win32":
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
             fcntl.ioctl(self.fd, termios.TIOCSWINSZ, winsize)
+            if self.is_running:
+                try:
+                    # Also explicitly tell tmux to resize to avoid wrapping issues
+                    subprocess.run(["tmux", "resize-window", "-t", self.session_name, "-x", str(cols), "-y", str(rows)], capture_output=True)
+                except Exception:
+                    pass
 
     def register_callback(self, callback: Callable[[str], None]):
         """Registers a callback to receive terminal output."""

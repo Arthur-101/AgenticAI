@@ -20,6 +20,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
     // Initialize xterm
     const term = new Terminal({
       cursorBlink: true,
+      scrollback: 0, // Disable native scrollback since tmux handles it
+      cols: 80,
+      rows: 24,
       theme: {
         background: '#1e1e1e',
         foreground: '#d4d4d4',
@@ -34,7 +37,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
     term.loadAddon(fitAddon);
     
     term.open(terminalRef.current);
-    fitAddon.fit();
+    if (terminalRef.current.clientWidth > 0) {
+      fitAddon.fit();
+    }
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
@@ -51,12 +56,21 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
       ws.onopen = () => {
         term.writeln('\x1b[32mConnected to AgenticAI Terminal\x1b[0m\r\n');
         
-        // Send initial resize
-        ws.send(JSON.stringify({
-          type: 'resize',
-          rows: term.rows,
-          cols: term.cols
-        }));
+        // Send initial resize only if dimensions are reasonable
+        if (term.cols > 10) {
+          ws.send(JSON.stringify({
+            type: 'resize',
+            rows: term.rows,
+            cols: term.cols
+          }));
+        } else {
+          // Fallback safe size to prevent bash from corrupting at startup
+          ws.send(JSON.stringify({
+            type: 'resize',
+            rows: 24,
+            cols: 80
+          }));
+        }
       };
 
       ws.onmessage = (event) => {
@@ -86,7 +100,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
 
     // Handle window resize
     const handleResize = () => {
-      if (fitAddonRef.current) {
+      if (fitAddonRef.current && terminalRef.current && terminalRef.current.clientWidth > 0) {
         fitAddonRef.current.fit();
         if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
           wsRef.current.send(JSON.stringify({
@@ -115,16 +129,18 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
   }, []);
 
   useEffect(() => {
-    if (isVisible && fitAddonRef.current) {
+    if (isVisible && fitAddonRef.current && terminalRef.current) {
       // Need a small timeout to allow display:block to take effect before measuring
       setTimeout(() => {
-        fitAddonRef.current?.fit();
-        if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
-          wsRef.current.send(JSON.stringify({
-            type: 'resize',
-            rows: xtermRef.current.rows,
-            cols: xtermRef.current.cols
-          }));
+        if (terminalRef.current && terminalRef.current.clientWidth > 0) {
+          fitAddonRef.current?.fit();
+          if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
+            wsRef.current.send(JSON.stringify({
+              type: 'resize',
+              rows: xtermRef.current.rows,
+              cols: xtermRef.current.cols
+            }));
+          }
         }
       }, 100);
     }
@@ -159,17 +175,26 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
           </button>
         )}
       </div>
-      <div 
-        ref={terminalRef} 
-        style={{ 
-          flex: 1, 
-          overflow: 'hidden', 
-          backgroundColor: '#1e1e1e',
-          padding: '8px',
-          borderBottomLeftRadius: '8px',
-          borderBottomRightRadius: '8px',
-        }} 
-      />
+      <div style={{ 
+        flex: 1, 
+        backgroundColor: '#1e1e1e',
+        padding: '8px',
+        borderBottomLeftRadius: '8px',
+        borderBottomRightRadius: '8px',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
+        <div 
+          ref={terminalRef} 
+          style={{ 
+            flex: 1, 
+            width: '100%',
+            height: '100%',
+            overflow: 'hidden', 
+          }} 
+        />
+      </div>
     </div>
   );
 };
