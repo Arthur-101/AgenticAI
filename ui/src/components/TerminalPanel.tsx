@@ -181,19 +181,27 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
         padding: '8px',
         borderBottomLeftRadius: '8px',
         borderBottomRightRadius: '8px',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden'
+        position: 'relative',
+        minHeight: 0
       }}>
         <div 
-          ref={terminalRef} 
-          style={{ 
-            flex: 1, 
-            width: '100%',
-            height: '100%',
-            overflow: 'hidden', 
-          }} 
-        />
+          style={{
+            position: 'absolute',
+            top: '8px',
+            bottom: '8px',
+            left: '8px',
+            right: '8px'
+          }}
+        >
+          <div 
+            ref={terminalRef} 
+            style={{ 
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden', 
+            }} 
+          />
+        </div>
       </div>
     </div>
   );
