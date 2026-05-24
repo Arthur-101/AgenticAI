@@ -175,6 +175,15 @@ async def websocket_terminal(websocket: WebSocket):
     try:
         if not terminal_manager.is_running:
             terminal_manager.start()
+        else:
+            # Send current history to the newly connected client
+            # Delay slightly to allow frontend terminal to finish resizing
+            await asyncio.sleep(0.2)
+            history = terminal_manager.get_history(lines=1000)
+            if history:
+                # Need to replace newlines with \r\n for xterm.js
+                formatted_history = history.replace('\n', '\r\n')
+                await websocket.send_text(formatted_history + '\r\n')
             
         while True:
             data = await websocket.receive_text()

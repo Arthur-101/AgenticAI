@@ -54,23 +54,16 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
       wsRef.current = ws;
 
       ws.onopen = () => {
-        term.writeln('\x1b[32mConnected to AgenticAI Terminal\x1b[0m\r\n');
-        
-        // Send initial resize only if dimensions are reasonable
-        if (term.cols > 10) {
-          ws.send(JSON.stringify({
-            type: 'resize',
-            rows: term.rows,
-            cols: term.cols
-          }));
-        } else {
-          // Fallback safe size to prevent bash from corrupting at startup
-          ws.send(JSON.stringify({
-            type: 'resize',
-            rows: 24,
-            cols: 80
-          }));
-        }
+        // Send initial resize
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN && isComponentMounted && term.cols > 10) {
+            ws.send(JSON.stringify({
+              type: 'resize',
+              rows: term.rows,
+              cols: term.cols
+            }));
+          }
+        }, 100);
       };
 
       ws.onmessage = (event) => {
@@ -131,14 +124,12 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
   }, []);
 
   useEffect(() => {
-    // The ResizeObserver handles fitting when visibility changes to block,
-    // so we don't need a manual setTimeout here anymore.
-    if (isVisible && fitAddonRef.current && terminalRef.current) {
+    if (fitAddonRef.current && terminalRef.current) {
       if (terminalRef.current.clientWidth > 0) {
         fitAddonRef.current.fit();
       }
     }
-  }, [isVisible]);
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

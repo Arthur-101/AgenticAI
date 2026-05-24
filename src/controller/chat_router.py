@@ -437,7 +437,7 @@ class ChatRouter:
                         
                         # Save sub-agent interaction to database so it persists across sessions
                         self.memory_store.save_message(
-                            session_id=effective_session_id,
+                            session_id=session_id,
                             role="sub_agent",
                             content_raw=log_msg["content"],
                             model_id=log_msg["model"],
@@ -465,7 +465,7 @@ class ChatRouter:
                         
                         # Save terminal command to database so it persists across sessions
                         self.memory_store.save_message(
-                            session_id=effective_session_id,
+                            session_id=session_id,
                             role="sub_agent",
                             content_raw=log_msg["content"],
                             model_id="Terminal",

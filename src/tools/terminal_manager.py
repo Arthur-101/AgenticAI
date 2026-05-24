@@ -46,7 +46,8 @@ class TerminalManager:
             cmd = [
                 "tmux", "new-session", "-A", "-s", self.session_name, 
                 ";", "set-option", "-t", self.session_name, "status", "off",
-                ";", "set-option", "-g", "mouse", "on"
+                ";", "set-option", "-g", "mouse", "on",
+                ";", "set-window-option", "-t", self.session_name, "aggressive-resize", "on"
             ]
             env = os.environ.copy()
             # Explicitly set TERM so tmux knows mouse scrolling is supported
