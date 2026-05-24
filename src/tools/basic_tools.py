@@ -377,10 +377,15 @@ class BasicTools:
                                             "url": f"data:{mime_type};base64,{encoded_string}"
                                         }
                                     })
+                            elif mime_type and (mime_type.startswith('video/') or mime_type.startswith('audio/')):
+                                content_list[0]["text"] += f"\n\n[SYSTEM NOTE: The user attached a {mime_type} file at {path_str}. However, the OpenRouter API proxy currently only supports image files via base64. Audio and Video cannot be analyzed natively through this endpoint at this time. Please inform the user of this API limitation.]\n"
                             elif p.stat().st_size < 1024 * 1024:  # 1MB limit for text
                                 # Handle text
-                                content = FileProcessor.process_file(str(p))
-                                content_list[0]["text"] += f"\n\n--- Contents of {p.name} ---\n{content}\n"
+                                try:
+                                    content = FileProcessor.process_file(str(p))
+                                    content_list[0]["text"] += f"\n\n--- Contents of {p.name} ---\n{content}\n"
+                                except ValueError as e:
+                                    content_list[0]["text"] += f"\n\n[SYSTEM NOTE: Could not process {path_str}: {str(e)}]\n"
                     except Exception as e:
                         content_list[0]["text"] += f"\n\n(Error reading {path_str}: {str(e)})\n"
             
