@@ -107,6 +107,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
 
     if (terminalRef.current) {
       resizeObserver.observe(terminalRef.current);
+      if (terminalRef.current.parentElement) {
+        resizeObserver.observe(terminalRef.current.parentElement);
+      }
     }
 
     return () => {
@@ -124,12 +127,14 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
   }, []);
 
   useEffect(() => {
-    if (fitAddonRef.current && terminalRef.current) {
-      if (terminalRef.current.clientWidth > 0) {
-        fitAddonRef.current.fit();
-      }
+    if (isVisible && fitAddonRef.current && terminalRef.current) {
+      setTimeout(() => {
+        if (terminalRef.current && terminalRef.current.clientWidth > 0) {
+          fitAddonRef.current?.fit();
+        }
+      }, 50);
     }
-  }, []);
+  }, [isVisible]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>

@@ -206,7 +206,7 @@ class OpenRouterClient:
                 data = response.json()
                 
                 # Track cost
-                if "usage" in data:
+                if data.get("usage"):
                     usage = data["usage"]
                     input_tokens = usage.get("prompt_tokens", 0)
                     output_tokens = usage.get("completion_tokens", 0)
@@ -485,7 +485,7 @@ class OpenRouterClient:
                 data = response.json()
                 
                 # Track cost
-                if "usage" in data:
+                if data.get("usage"):
                     usage = data["usage"]
                     input_tokens = usage.get("prompt_tokens", 0)
                     output_tokens = usage.get("completion_tokens", 0)

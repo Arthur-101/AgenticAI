@@ -408,6 +408,19 @@ class ChatRouter:
                     except json.JSONDecodeError:
                         arguments = {}
                         
+                    # Auto-inject any media files mentioned in the prompt to the sub-agent
+                    if name == "ask_expert_model" and not arguments.get("file_paths"):
+                        # Look for potential file paths in the user's original message
+                        media_files = []
+                        for msg in context.assembled_messages:
+                            if msg.role == "user" or msg.role == "system":
+                                path_matches = re.findall(r'"([^"]+\.(?:mp4|mp3|wav|png|jpg|jpeg|gif|webp))"', msg.content, re.IGNORECASE)
+                                unquoted = re.findall(r'(?:[a-zA-Z]:[\\/]|/)(?:[\w.-]+[\\/])*[\w.-]+\.(?:mp4|mp3|wav|png|jpg|jpeg|gif|webp)', msg.content, re.IGNORECASE)
+                                media_files.extend(path_matches + unquoted)
+                        
+                        if media_files:
+                            arguments["file_paths"] = list(set(media_files))
+                        
                     print(f"🔧 Agent executing tool: {name} with args {arguments}")
                     # Run synchronous tools in a thread pool to avoid blocking the asyncio event loop
                     tool_result = await asyncio.to_thread(self.tool_manager.execute_tool, name, arguments)
@@ -445,8 +458,9 @@ class ChatRouter:
                         )
                     elif name == "execute_command":
                         cmd = arguments.get('command', '')
-                        output = tool_result.get('result', {}).get('stdout', '').strip()
-                        exit_code = tool_result.get('result', {}).get('returncode', 'Unknown')
+                        result_dict = tool_result.get('result') or {}
+                        output = result_dict.get('stdout', '').strip()
+                        exit_code = result_dict.get('returncode', 'Unknown')
                         
                         output_block = ""
                         if output:
