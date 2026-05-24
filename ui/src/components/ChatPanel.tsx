@@ -1,5 +1,5 @@
-import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select } from 'antd';
-import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined, InboxOutlined, CodeOutlined } from '@ant-design/icons';
+import { Layout, List, Input, Button, Space, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse } from 'antd';
+import { DeleteOutlined, SettingOutlined, EditOutlined, SaveOutlined, PlusOutlined, InboxOutlined, CodeOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -26,6 +26,7 @@ export default function ChatPanel() {
   const [backendLogs, setBackendLogs] = useState<string[]>([]);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -474,30 +475,96 @@ export default function ChatPanel() {
                                 Sub-Agent ({msg.model_id})
                               </div>
                             )}
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm, remarkEmoji]}
-                              components={{
-                                code({node, inline, className, children, ...props}: any) {
-                                  const match = /language-(\w+)/.exec(className || '');
-                                  return !inline && match ? (
-                                    <SyntaxHighlighter
-                                      style={vscDarkPlus as any}
-                                      language={match[1]}
-                                      PreTag="div"
-                                      {...props}
+                            
+                            {msg.role === 'sub_agent' ? (
+                              <Collapse 
+                                size="small" 
+                                ghost 
+                                items={[{
+                                  key: '1',
+                                  label: <span style={{ fontSize: '12px', color: '#666' }}>View Agent Log</span>,
+                                  children: (
+                                    <ReactMarkdown 
+                                      remarkPlugins={[remarkGfm, remarkEmoji]}
+                                      components={{
+                                        code({node, inline, className, children, ...props}: any) {
+                                          const match = /language-(\w+)/.exec(className || '');
+                                          const codeContent = String(children).replace(/\n$/, '');
+                                          return !inline && match ? (
+                                            <div style={{ position: 'relative' }}>
+                                              <Button
+                                                type="text"
+                                                icon={copiedCode === codeContent ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined style={{ color: '#888' }} />}
+                                                size="small"
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(codeContent);
+                                                  setCopiedCode(codeContent);
+                                                  setTimeout(() => setCopiedCode(null), 2000);
+                                                }}
+                                                style={{ position: 'absolute', top: 5, right: 5, zIndex: 1, background: 'rgba(30, 30, 30, 0.7)' }}
+                                              />
+                                              <SyntaxHighlighter
+                                                style={vscDarkPlus as any}
+                                                language={match[1]}
+                                                PreTag="div"
+                                                {...props}
+                                              >
+                                                {codeContent}
+                                              </SyntaxHighlighter>
+                                            </div>
+                                          ) : (
+                                            <code className={className} style={{background: '#f0f0f0', padding: '2px 4px', borderRadius: '4px'}} {...props}>
+                                              {children}
+                                            </code>
+                                          );
+                                        }
+                                      }}
                                     >
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
-                                  ) : (
-                                    <code className={className} style={{background: '#f0f0f0', padding: '2px 4px', borderRadius: '4px'}} {...props}>
-                                      {children}
-                                    </code>
-                                  );
-                                }
-                              }}
-                            >
-                              {msg.content}
-                            </ReactMarkdown>
+                                      {msg.content}
+                                    </ReactMarkdown>
+                                  )
+                                }]} 
+                              />
+                            ) : (
+                              <ReactMarkdown 
+                                remarkPlugins={[remarkGfm, remarkEmoji]}
+                                components={{
+                                  code({node, inline, className, children, ...props}: any) {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    const codeContent = String(children).replace(/\n$/, '');
+                                    return !inline && match ? (
+                                      <div style={{ position: 'relative' }}>
+                                        <Button
+                                          type="text"
+                                          icon={copiedCode === codeContent ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined style={{ color: '#888' }} />}
+                                          size="small"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(codeContent);
+                                            setCopiedCode(codeContent);
+                                            setTimeout(() => setCopiedCode(null), 2000);
+                                          }}
+                                          style={{ position: 'absolute', top: 5, right: 5, zIndex: 1, background: 'rgba(30, 30, 30, 0.7)' }}
+                                        />
+                                        <SyntaxHighlighter
+                                          style={vscDarkPlus as any}
+                                          language={match[1]}
+                                          PreTag="div"
+                                          {...props}
+                                        >
+                                          {codeContent}
+                                        </SyntaxHighlighter>
+                                      </div>
+                                    ) : (
+                                      <code className={className} style={{background: '#f0f0f0', padding: '2px 4px', borderRadius: '4px'}} {...props}>
+                                        {children}
+                                      </code>
+                                    );
+                                  }
+                                }}
+                              >
+                                {msg.content}
+                              </ReactMarkdown>
+                            )}
                           </div>
                           {msg.model_id && (msg.role === 'assistant' || msg.role === 'sub_agent') && (
                             <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px', textAlign: 'right' }}>

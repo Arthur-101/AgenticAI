@@ -98,8 +98,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
       }
     });
 
-    // Handle window resize
-    const handleResize = () => {
+    // Handle container resize cleanly using ResizeObserver
+    const resizeObserver = new ResizeObserver(() => {
       if (fitAddonRef.current && terminalRef.current && terminalRef.current.clientWidth > 0) {
         fitAddonRef.current.fit();
         if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
@@ -110,13 +110,15 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
           }));
         }
       }
-    };
+    });
 
-    window.addEventListener('resize', handleResize);
+    if (terminalRef.current) {
+      resizeObserver.observe(terminalRef.current);
+    }
 
     return () => {
       isComponentMounted = false;
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       clearTimeout(reconnectTimeoutId);
       if (wsRef.current) {
         wsRef.current.onclose = null; // Prevent reconnect loop on unmount
@@ -129,20 +131,12 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
   }, []);
 
   useEffect(() => {
+    // The ResizeObserver handles fitting when visibility changes to block,
+    // so we don't need a manual setTimeout here anymore.
     if (isVisible && fitAddonRef.current && terminalRef.current) {
-      // Need a small timeout to allow display:block to take effect before measuring
-      setTimeout(() => {
-        if (terminalRef.current && terminalRef.current.clientWidth > 0) {
-          fitAddonRef.current?.fit();
-          if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
-            wsRef.current.send(JSON.stringify({
-              type: 'resize',
-              rows: xtermRef.current.rows,
-              cols: xtermRef.current.cols
-            }));
-          }
-        }
-      }, 100);
+      if (terminalRef.current.clientWidth > 0) {
+        fitAddonRef.current.fit();
+      }
     }
   }, [isVisible]);
 

@@ -429,11 +429,20 @@ class ChatRouter:
                     if name == "ask_expert_model":
                         # Send this specific sub-agent output to the UI
                         log_msg = {
-                            "content": f"**Task**: {arguments.get('prompt', '')[:100]}...\n\n**Result**:\n{tool_result.get('result', '')}",
+                            "content": f"**Task**: {arguments.get('prompt', '')}\n\n**Result**:\n{tool_result.get('result', '')}",
                             "model": arguments.get('model_name', 'sub-agent')
                         }
                         import sys
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+                        
+                        # Save sub-agent interaction to database so it persists across sessions
+                        self.memory_store.save_message(
+                            session_id=effective_session_id,
+                            role="sub_agent",
+                            content_raw=log_msg["content"],
+                            model_id=log_msg["model"],
+                            tokens_used=0,
+                        )
                     elif name == "execute_command":
                         cmd = arguments.get('command', '')
                         output = tool_result.get('result', {}).get('stdout', '').strip()
@@ -453,6 +462,15 @@ class ChatRouter:
                         }
                         import sys
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+                        
+                        # Save terminal command to database so it persists across sessions
+                        self.memory_store.save_message(
+                            session_id=effective_session_id,
+                            role="sub_agent",
+                            content_raw=log_msg["content"],
+                            model_id="Terminal",
+                            tokens_used=0,
+                        )
                     else:
                         import sys
                         from datetime import datetime
