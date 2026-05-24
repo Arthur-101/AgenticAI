@@ -367,18 +367,19 @@ class BasicTools:
                         if p.exists() and p.is_file():
                             mime_type, _ = mimetypes.guess_type(str(p))
                             
-                            if mime_type and mime_type.startswith('image/'):
-                                # Handle image
-                                with open(p, "rb") as image_file:
-                                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                                    content_list.append({
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:{mime_type};base64,{encoded_string}"
-                                        }
-                                    })
-                            elif mime_type and (mime_type.startswith('video/') or mime_type.startswith('audio/')):
-                                content_list[0]["text"] += f"\n\n[SYSTEM NOTE: The user attached a {mime_type} file at {path_str}. However, the OpenRouter API proxy currently only supports image files via base64. Audio and Video cannot be analyzed natively through this endpoint at this time. Please inform the user of this API limitation.]\n"
+                            if mime_type and (mime_type.startswith('image/') or mime_type.startswith('video/') or mime_type.startswith('audio/')):
+                                # Handle media files (max 50MB to prevent memory crash)
+                                if p.stat().st_size < 50 * 1024 * 1024:
+                                    with open(p, "rb") as media_file:
+                                        encoded_string = base64.b64encode(media_file.read()).decode('utf-8')
+                                        content_list.append({
+                                            "type": "image_url",
+                                            "image_url": {
+                                                "url": f"data:{mime_type};base64,{encoded_string}"
+                                            }
+                                        })
+                                else:
+                                    content_list[0]["text"] += f"\n\n[SYSTEM NOTE: The media file {p.name} is too large (>50MB) to process via base64.]\n"
                             elif p.stat().st_size < 1024 * 1024:  # 1MB limit for text
                                 # Handle text
                                 try:

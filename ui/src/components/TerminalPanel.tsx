@@ -132,7 +132,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
   }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
@@ -142,7 +142,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
         color: '#fff',
         borderTopLeftRadius: '8px',
         borderTopRightRadius: '8px',
-        borderBottom: '1px solid #444'
+        borderBottom: '1px solid #444',
+        flexShrink: 0
       }}>
         <div style={{ fontWeight: 'bold' }}>AgenticAI Shared Terminal</div>
         {onClose && (
@@ -166,16 +167,27 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
         padding: '8px',
         borderBottomLeftRadius: '8px',
         borderBottomRightRadius: '8px',
-        height: '0px', // Force flex: 1 to dictate height, not content
-        overflow: 'hidden'
+        position: 'relative',
+        minHeight: 0
       }}>
         <div 
-          ref={terminalRef} 
-          style={{ 
-            width: '100%',
-            height: '100%',
-          }} 
-        />
+          style={{
+            position: 'absolute',
+            top: '8px',
+            bottom: '8px',
+            left: '8px',
+            right: '8px'
+          }}
+        >
+          <div 
+            ref={terminalRef} 
+            style={{ 
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden', 
+            }} 
+          />
+        </div>
       </div>
     </div>
   );
