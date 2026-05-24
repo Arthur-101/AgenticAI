@@ -48,6 +48,10 @@ class TerminalManager:
                 ";", "set-option", "-t", self.session_name, "status", "off",
                 ";", "set-option", "-g", "mouse", "on"
             ]
+            env = os.environ.copy()
+            # Explicitly set TERM so tmux knows mouse scrolling is supported
+            env["TERM"] = "xterm-256color"
+            
             self.process = subprocess.Popen(
                 cmd,
                 preexec_fn=os.setsid,
@@ -55,7 +59,7 @@ class TerminalManager:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 cwd=workdir,
-                env=os.environ.copy()
+                env=env
             )
             os.close(slave_fd)
             self.fd = master_fd
