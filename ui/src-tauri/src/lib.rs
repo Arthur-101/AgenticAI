@@ -375,16 +375,38 @@ pub fn run() {
             stdin: AsyncMutex::new(None),
             stdout: AsyncMutex::new(None),
         })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+            _ => {}
+        })
         .setup(|app| {
-            let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit AgenticAI", true, None::<&str>)?;
-            let show_i = tauri::menu::MenuItem::with_id(app, "show", "Show Chat", true, None::<&str>)?;
+            let status_i = tauri::menu::MenuItem::with_id(app, "status", "🟢 AgenticAI (Engine Active)", false, None::<&str>)?;
+            let show_i = tauri::menu::MenuItem::with_id(app, "show", "🖥️  Show Studio Window", true, None::<&str>)?;
+            let new_chat_i = tauri::menu::MenuItem::with_id(app, "new_chat", "➕  Start New Chat", true, None::<&str>)?;
+            let toggle_i = tauri::menu::MenuItem::with_id(app, "toggle_engine", "⚡  Toggle AI Engine", true, None::<&str>)?;
+            let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "❌  Quit AgenticAI", true, None::<&str>)?;
             
-            let menu = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i])?;
+            let sep1 = tauri::menu::PredefinedMenuItem::separator(app)?;
+            let sep2 = tauri::menu::PredefinedMenuItem::separator(app)?;
+
+            let menu = tauri::menu::Menu::with_items(app, &[
+                &status_i,
+                &sep1,
+                &show_i,
+                &new_chat_i,
+                &toggle_i,
+                &sep2,
+                &quit_i,
+            ])?;
 
             let _tray = tauri::tray::TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                .tooltip("AgenticAI Studio - Multi-Model AI Ready")
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         std::process::exit(0);
@@ -393,6 +415,18 @@ pub fn run() {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                        }
+                    }
+                    "new_chat" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.emit("trigger-new-chat", ());
+                        }
+                    }
+                    "toggle_engine" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.emit("trigger-toggle-engine", ());
                         }
                     }
                     _ => {}
@@ -405,8 +439,12 @@ pub fn run() {
                     } = event {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
                     }
                 })

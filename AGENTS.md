@@ -173,6 +173,16 @@ data/
 ### Windows Native Migration, Terminal Fixes & Document RAG:
 - **Terminal Manager (`src/tools/terminal_manager.py`)**: Migrated to `pywinpty` on Windows. Fixed PTY read signature (`read(blocking=False)`). Implemented `clean_ansi()` logic with PSReadLine cursor-positioning code splitting (`\x1b[row;colH`) and prompt-grouping line filters to eliminate all intermediate typing typos (`ccdcd`, `llsls`).
 - **Web Search (`src/tools/basic_tools.py`)**: Updated dependencies to use `ddgs>=9.0.0` with fallback for `duckduckgo-search`.
-- **Tauri Python Resolver (`ui/src-tauri/src/lib.rs`)**: Added dynamic ancestor traversal to locate project root and `.venv/Scripts/python.exe` reliably.
-- **Document RAG & Vector Indexing**: Added `FileProcessor` support for `.py`, `.pdf`, `.txt`, `.md`, `.json`, `.csv`, `.js`, `.ts`, `.tsx`, `.html`, `.css`, `.rs`, `.log`. Added `index_document` RPC endpoint and Tauri command. Integrated ChromaDB document chunk retrieval (`search_documents`) directly into `ChatRouter._assemble_context`.
-- **UI File Attachment**: Connected paperclip button in `ChatPanel.tsx` with `@tauri-apps/plugin-dialog` and HTML file input fallback. Renders glass document tags (`📄 filename.pdf (4 chunks)`) above the chat input box.
+- **Tauri Python Resolver (`ui/src-tauri/src/lib.rs`)**: Added dynamic ancestor traversal to locate project root and `.venv/Scripts/python.exe` reliably regardless of working directory.
+- **Document RAG & Multi-Format Processor (`src/processors/file_processor.py`)**: Added support for `.py`, `.pdf`, `.txt`, `.md`, `.json`, `.csv`, `.js`, `.ts`, `.tsx`, `.html`, `.css`, `.rs`, `.log`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.mp3`, `.mp4`, `.wav`, etc. Embedded base64 `data_url` generation for image files to bypass webview asset protocol origin restrictions. Integrated ChromaDB document chunk retrieval (`search_documents`) into `ChatRouter._assemble_context`.
+- **Gemini / ChatGPT Style Attachment UI (`ui/src/components/ChatPanel.tsx`)**:
+  - Rendered square rounded thumbnail cards (`68x68px`) with hover scale, zoom overlays, and close buttons for attached images in the draft input container.
+  - Rendered attached thumbnail cards above user chat bubbles in message history.
+  - Built full-screen **Image Lightbox Zoom Modal** for high-resolution image inspection.
+  - Implemented auto-healing `onError` handler on `<img />` tags to dynamically fetch Base64 Data URLs from Python if asset protocol loading fails.
+  - Updated `sendMessage` payload to automatically append file tags (`[Attached File: ...| Path: ...]`) to guarantee 100% RAG retrieval even for non-semantic prompts.
+- **Windows System Tray & Background Service (`ui/src-tauri/src/lib.rs` & `ui/src/components/ChatPanel.tsx`)**:
+  - Intercepted `CloseRequested` window event to minimize the app to the Windows System Tray on close instead of exiting.
+  - Built native System Tray Context Menu (`🟢 AgenticAI (Engine Active)`, `🖥️ Show Studio Window`, `➕ Start New Chat`, `⚡ Toggle AI Engine`, `❌ Quit AgenticAI`).
+  - Added left-click toggle on the System Tray icon to instantly hide/unhide and focus the app window.
+  - Connected `trigger-new-chat` and `trigger-toggle-engine` IPC event triggers from Tauri to React.

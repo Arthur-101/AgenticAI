@@ -179,6 +179,18 @@ export default function ChatPanel() {
     scrollLogsToBottom();
   }, [backendLogs]);
 
+  const handleCreateSession = async () => {
+    try {
+      const newSessionId = await invoke<string>('new_session');
+      setSessionId(newSessionId);
+      setMessages([]);
+      await loadSessions();
+      antdMessage.success('New chat session started');
+    } catch (error) {
+      antdMessage.error(`Failed to start new session: ${error}`);
+    }
+  };
+
   // Initialize on component mount
   useEffect(() => {
     initializeBackend();
@@ -215,9 +227,35 @@ export default function ChatPanel() {
       }
     }).catch(err => console.error("Failed to setup log listener", err));
     
+    let unlistenNewChat: (() => void) | undefined;
+    let unlistenToggleEngine: (() => void) | undefined;
+
+    listen('trigger-new-chat', () => {
+      handleCreateSession();
+    }).then(fn => { unlistenNewChat = fn; });
+
+    listen('trigger-toggle-engine', async () => {
+      try {
+        const isRunning = await invoke<boolean>('backend_status');
+        if (isRunning) {
+          await invoke('stop_backend');
+          setBackendRunning(false);
+          antdMessage.info('AI Engine stopped via System Tray');
+        } else {
+          await invoke('start_backend');
+          setBackendRunning(true);
+          antdMessage.success('AI Engine started via System Tray');
+        }
+      } catch (err) {
+        console.error('Failed to toggle backend from tray:', err);
+      }
+    }).then(fn => { unlistenToggleEngine = fn; });
+
     return () => {
       isMounted = false;
       if (unlisten) unlisten();
+      if (unlistenNewChat) unlistenNewChat();
+      if (unlistenToggleEngine) unlistenToggleEngine();
     };
   }, []);
 
@@ -554,17 +592,7 @@ export default function ChatPanel() {
               type="primary" 
               block 
               icon={<PlusOutlined />}
-              onClick={async () => {
-                try {
-                  const newSessionId = await invoke<string>('new_session');
-                  setSessionId(newSessionId);
-                  setMessages([]);
-                  await loadSessions();
-                  antdMessage.success('New chat session started');
-                } catch (error) {
-                  antdMessage.error(`Failed to start new session: ${error}`);
-                }
-              }}
+              onClick={handleCreateSession}
               style={{
                 background: 'linear-gradient(135deg, #2563eb, #0284c7)',
                 border: 'none',
