@@ -70,6 +70,8 @@ class EmbeddedBackend:
                 return self._handle_update_memory(params)
             elif method == "delete_memory":
                 return self._handle_delete_memory(params)
+            elif method == "index_document":
+                return self._handle_index_document(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -205,6 +207,46 @@ class EmbeddedBackend:
             "result": {"success": success},
             "id": params.get("request_id")
         }
+
+    def _handle_index_document(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a document and index its contents into ChromaDB vector store."""
+        file_path = params.get("file_path", "")
+        if not file_path or not os.path.exists(file_path):
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32602, "message": f"File not found: {file_path}"},
+                "id": params.get("request_id")
+            }
+            
+        try:
+            from src.processors.file_processor import FileProcessor
+            content = FileProcessor.process_file(file_path)
+            self.router.vector_store.add_document(
+                file_path=file_path,
+                content=content
+            )
+            file_name = os.path.basename(file_path)
+            char_count = len(content)
+            chunk_count = (char_count // 800) + 1
+            
+            return {
+                "jsonrpc": "2.0",
+                "result": {
+                    "status": "success",
+                    "file_path": file_path,
+                    "file_name": file_name,
+                    "character_count": char_count,
+                    "chunk_count": chunk_count,
+                    "content_snippet": content[:300]
+                },
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32603, "message": str(e)},
+                "id": params.get("request_id")
+            }
 
 async def main_async():
     """Async main entry point."""

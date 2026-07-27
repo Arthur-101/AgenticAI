@@ -86,19 +86,42 @@ async fn start_backend(app_handle: tauri::AppHandle) -> Result<String, String> {
         }
     }
     
-    // Get the path to the Python embedded backend
-    let script_path = std::path::Path::new("../../src/api/embedded_backend.py")
-        .canonicalize()
-        .map_err(|e| format!("Could not find embedded_backend.py: {}", e))?;
+    // Robustly find the project root by checking current dir and ancestors
+    let mut current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut project_root = None;
+    
+    // Search upwards up to 3 levels to find "src/api/embedded_backend.py"
+    for _ in 0..4 {
+        if current_dir.join("src/api/embedded_backend.py").exists() {
+            project_root = Some(current_dir.clone());
+            break;
+        }
+        if !current_dir.pop() {
+            break;
+        }
+    }
+    
+    let project_root = project_root.ok_or_else(|| "Could not find project root containing src/api/embedded_backend.py".to_string())?;
+    let script_path = project_root.join("src/api/embedded_backend.py");
         
-    let project_root = std::path::Path::new("../../")
-        .canonicalize()
-        .map_err(|e| format!("Could not find project root: {}", e))?;
-        
-    let python_path = project_root.join(".venv/bin/python");
+    let python_path_unix = project_root.join(".venv/bin/python");
+    let python_path_win = project_root.join(".venv/Scripts/python.exe");
+    
+    // Use absolute path for Windows to avoid Microsoft Store alias issues
+    let python_cmd = if python_path_win.exists() {
+        python_path_win.to_str().unwrap()
+    } else if python_path_unix.exists() {
+        python_path_unix.to_str().unwrap()
+    } else {
+        if cfg!(windows) { "python" } else { "python3" }
+    };
+    
+    println!("DEBUG: Found Windows Python path: {}", python_path_win.display());
+    println!("DEBUG: Does it exist? {}", python_path_win.exists());
+    println!("DEBUG: Executing Python command: {}", python_cmd);
     
     // Start the Python embedded backend with stdin/stdout/stderr pipes
-    let mut cmd = Command::new(if python_path.exists() { python_path.to_str().unwrap() } else { "python3" });
+    let mut cmd = Command::new(python_cmd);
     cmd.current_dir(&project_root)
         .arg(&script_path)
         .stdin(Stdio::piped())
@@ -201,22 +224,37 @@ async fn send_chat_message(
     
     let result = send_json_rpc(&app_handle, "chat", params, None).await?;
     
-    if result.get("response").is_some() {
+    if result.get("content").is_some() || result.get("response").is_some() || result.get("reply").is_some() {
         Ok(result)
     } else {
-        Err("No response in result".to_string())
+        Ok(result)
     }
+}
+
+#[tauri::command]
+async fn index_document(
+    app_handle: tauri::AppHandle,
+    file_path: String
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "file_path": file_path,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    
+    let result = send_json_rpc(&app_handle, "index_document", params, None).await?;
+    Ok(result)
 }
 
 #[tauri::command]
 async fn get_chat_history(
     app_handle: tauri::AppHandle,
     session_id: Option<String>, 
-    limit: i32
+    limit: Option<i32>
 ) -> Result<Vec<serde_json::Value>, String> {
+    let limit_val = limit.unwrap_or(100);
     let params = json!({
         "session_id": session_id,
-        "limit": limit,
+        "limit": limit_val,
         "request_id": Uuid::new_v4().to_string()
     });
     
@@ -376,6 +414,7 @@ pub fn run() {
 
             Ok(())
         })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             start_backend,
             stop_backend,
@@ -388,6 +427,7 @@ pub fn run() {
             get_all_memories,
             update_memory,
             delete_memory,
+            index_document,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

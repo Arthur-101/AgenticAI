@@ -165,9 +165,14 @@ data/
 └── documents/       # Processed files
 ```
 
-## Notes
-
 - API keys in `.env` (never commit)
 - OpenRouter API key required
 - Windows background service via Tauri
 - MCP-style tool architecture
+
+### Windows Native Migration, Terminal Fixes & Document RAG:
+- **Terminal Manager (`src/tools/terminal_manager.py`)**: Migrated to `pywinpty` on Windows. Fixed PTY read signature (`read(blocking=False)`). Implemented `clean_ansi()` logic with PSReadLine cursor-positioning code splitting (`\x1b[row;colH`) and prompt-grouping line filters to eliminate all intermediate typing typos (`ccdcd`, `llsls`).
+- **Web Search (`src/tools/basic_tools.py`)**: Updated dependencies to use `ddgs>=9.0.0` with fallback for `duckduckgo-search`.
+- **Tauri Python Resolver (`ui/src-tauri/src/lib.rs`)**: Added dynamic ancestor traversal to locate project root and `.venv/Scripts/python.exe` reliably.
+- **Document RAG & Vector Indexing**: Added `FileProcessor` support for `.py`, `.pdf`, `.txt`, `.md`, `.json`, `.csv`, `.js`, `.ts`, `.tsx`, `.html`, `.css`, `.rs`, `.log`. Added `index_document` RPC endpoint and Tauri command. Integrated ChromaDB document chunk retrieval (`search_documents`) directly into `ChatRouter._assemble_context`.
+- **UI File Attachment**: Connected paperclip button in `ChatPanel.tsx` with `@tauri-apps/plugin-dialog` and HTML file input fallback. Renders glass document tags (`📄 filename.pdf (4 chunks)`) above the chat input box.

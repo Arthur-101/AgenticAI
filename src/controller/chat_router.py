@@ -286,6 +286,24 @@ class ChatRouter:
             if vector_context_texts:
                 vector_context = "\n".join(vector_context_texts)
                 context_messages.insert(-1, Message(role="system", content=f"Relevant factual memories about the user/project retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Use these retrieved memories ONLY if they are directly relevant to the user's current request. Do not mention them if they are unrelated."))
+
+        # Search vector store for relevant indexed document chunks (RAG)
+        doc_results = self.vector_store.search_documents(query=user_message, limit=3)
+        if doc_results:
+            doc_context_texts = []
+            for item in doc_results:
+                file_p = item.get("metadata", {}).get("file_path", "Document")
+                file_name = os.path.basename(file_p)
+                content_chunk = item.get("content", "").strip()
+                if content_chunk:
+                    doc_context_texts.append(f"[{file_name}]:\n{content_chunk}")
+                    
+            if doc_context_texts:
+                doc_context = "\n\n".join(doc_context_texts)
+                context_messages.insert(-1, Message(
+                    role="system",
+                    content=f"--- RETRIEVED DOCUMENT CONTEXT (RAG) ---\n{doc_context}\n--- END RETRIEVED DOCUMENT CONTEXT ---\n\nSYSTEM INSTRUCTION: Use the above retrieved document chunks to accurately answer the user's question if relevant."
+                ))
         
         # Add live terminal state
         term_history = terminal_manager.get_history(lines=60)

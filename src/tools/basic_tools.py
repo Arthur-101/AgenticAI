@@ -9,7 +9,10 @@ import json
 from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup
-from ddgs import DDGS
+try:
+    from ddgs import DDGS
+except ImportError:
+    from duckduckgo_search import DDGS
 from src.processors.file_processor import FileProcessor
 
 

@@ -1,6 +1,15 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { Rnd } from 'react-rnd';
+import { 
+  CodeOutlined, 
+  FullscreenOutlined, 
+  FullscreenExitOutlined, 
+  ClearOutlined,
+  EyeInvisibleOutlined
+} from '@ant-design/icons';
+import { Tooltip } from 'antd';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalPanelProps {
@@ -14,23 +23,46 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
 
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Initialize xterm
+    // Initialize xterm with a sleek dark theme
     const term = new Terminal({
       cursorBlink: true,
-      scrollback: 0, // Disable native scrollback since tmux handles it
+      scrollback: 1000,
       cols: 80,
       rows: 24,
       theme: {
-        background: '#1e1e1e',
-        foreground: '#d4d4d4',
-        cursor: '#ffffff',
-        selectionBackground: 'rgba(255, 255, 255, 0.3)',
+        background: '#0b0f19',
+        foreground: '#e2e8f0',
+        cursor: '#38bdf8',
+        cursorAccent: '#0b0f19',
+        selectionBackground: 'rgba(56, 189, 248, 0.3)',
+        black: '#0f172a',
+        red: '#f87171',
+        green: '#4ade80',
+        yellow: '#fbbf24',
+        blue: '#60a5fa',
+        magenta: '#c084fc',
+        cyan: '#38bdf8',
+        white: '#f1f5f9',
+        brightBlack: '#475569',
+        brightRed: '#ef4444',
+        brightGreen: '#22c55e',
+        brightYellow: '#eab308',
+        brightBlue: '#3b82f6',
+        brightMagenta: '#a855f7',
+        brightCyan: '#06b6d4',
+        brightWhite: '#ffffff',
       },
-      fontFamily: import.meta.env.VITE_TERMINAL_FONT || '"Fira Code", monospace',
+      fontFamily: import.meta.env.VITE_TERMINAL_FONT || 'Consolas, "Cascadia Code", "Fira Code", "Courier New", monospace',
       fontSize: 14,
+      fontWeight: 'normal',
+      letterSpacing: 0,
+      lineHeight: 1.1,
     });
     
     const fitAddon = new FitAddon();
@@ -54,7 +86,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Send initial resize
+        setIsConnected(true);
         setTimeout(() => {
           if (ws.readyState === WebSocket.OPEN && isComponentMounted && term.cols > 10) {
             ws.send(JSON.stringify({
@@ -72,10 +104,12 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
 
       ws.onerror = (error) => {
         console.error('Terminal WebSocket error:', error);
+        setIsConnected(false);
       };
 
       ws.onclose = () => {
         if (!isComponentMounted) return;
+        setIsConnected(false);
         term.writeln('\r\n\x1b[33mTerminal connection closed. Reconnecting in 2 seconds...\x1b[0m\r\n');
         clearTimeout(reconnectTimeoutId);
         reconnectTimeoutId = setTimeout(connectWebSocket, 2000);
@@ -117,7 +151,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
       resizeObserver.disconnect();
       clearTimeout(reconnectTimeoutId);
       if (wsRef.current) {
-        wsRef.current.onclose = null; // Prevent reconnect loop on unmount
+        wsRef.current.onclose = null;
         wsRef.current.close();
       }
       if (xtermRef.current) {
@@ -134,67 +168,151 @@ const TerminalPanel: React.FC<TerminalPanelProps> = ({ onClose, isVisible = true
         }
       }, 50);
     }
-  }, [isVisible]);
+  }, [isVisible, isMaximized]);
+
+  const handleClear = () => {
+    xtermRef.current?.clear();
+  };
+
+  const toggleMaximize = () => {
+    setIsMaximized(!isMaximized);
+  };
+
+  const defaultWidth = Math.min(950, window.innerWidth - 60);
+  const defaultHeight = Math.min(600, window.innerHeight - 100);
+
+  const rndPositionProps = isMaximized
+    ? {
+        position: { x: 0, y: 0 },
+        size: { width: '100vw', height: '100vh' },
+        disableDragging: true,
+        enableResizing: false,
+      }
+    : {
+        default: {
+          x: Math.max(window.innerWidth / 2 - defaultWidth / 2, 20),
+          y: Math.max(window.innerHeight / 2 - defaultHeight / 2, 20),
+          width: defaultWidth,
+          height: defaultHeight,
+        },
+        minWidth: 400,
+        minHeight: 250,
+        bounds: "window",
+        dragHandleClassName: "terminal-drag-handle",
+      };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        padding: '8px 16px', 
-        backgroundColor: '#2d2d2d',
-        color: '#fff',
-        borderTopLeftRadius: '8px',
-        borderTopRightRadius: '8px',
-        borderBottom: '1px solid #444',
-        flexShrink: 0
-      }}>
-        <div style={{ fontWeight: 'bold' }}>AgenticAI Shared Terminal</div>
-        {onClose && (
-          <button 
-            onClick={onClose}
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              color: '#fff', 
-              cursor: 'pointer',
-              fontSize: '16px' 
+    <Rnd
+      {...rndPositionProps}
+      style={{ zIndex: 2000 }}
+    >
+      <div className="terminal-window-container">
+        {/* Modern Window Header Bar */}
+        <div className="terminal-drag-handle terminal-window-header">
+          {/* Left: macOS dots & Title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <button 
+                className="mac-dot mac-dot-close" 
+                onClick={onClose} 
+                title="Hide Terminal"
+              />
+              <button 
+                className="mac-dot mac-dot-minimize" 
+                onClick={onClose} 
+                title="Minimize Terminal"
+              />
+              <button 
+                className="mac-dot mac-dot-maximize" 
+                onClick={toggleMaximize} 
+                title={isMaximized ? "Restore Window" : "Maximize Window"}
+              />
+            </div>
+
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              fontSize: '13px', 
+              fontWeight: 600, 
+              color: '#f8fafc',
+              marginLeft: '4px'
+            }}>
+              <CodeOutlined style={{ color: '#38bdf8', fontSize: '15px' }} />
+              <span>AgenticAI Terminal</span>
+              <span style={{ 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: '5px',
+                fontSize: '11px',
+                fontWeight: 500,
+                color: isConnected ? '#4ade80' : '#f59e0b',
+                backgroundColor: isConnected ? 'rgba(34, 197, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                marginLeft: '6px'
+              }}>
+                <span className={isConnected ? "status-dot-pulsing" : ""} style={{ width: 6, height: 6, borderRadius: '50%', background: isConnected ? '#22c55e' : '#f59e0b' }} />
+                {isConnected ? 'Live' : 'Connecting'}
+              </span>
+            </div>
+          </div>
+
+          {/* Right: Header Control Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Tooltip title="Clear Terminal Screen">
+              <button className="terminal-header-btn" onClick={handleClear}>
+                <ClearOutlined />
+                <span>Clear</span>
+              </button>
+            </Tooltip>
+
+            <Tooltip title={isMaximized ? "Restore Window Size" : "Maximize Window"}>
+              <button className="terminal-header-btn" onClick={toggleMaximize}>
+                {isMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+              </button>
+            </Tooltip>
+
+            {onClose && (
+              <Tooltip title="Hide Terminal (Esc)">
+                <button className="terminal-header-btn terminal-header-btn-close" onClick={onClose}>
+                  <EyeInvisibleOutlined />
+                  <span>Hide Terminal</span>
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+
+        {/* Terminal Body */}
+        <div style={{ 
+          flex: 1, 
+          backgroundColor: '#0b0f19',
+          padding: '6px 8px',
+          position: 'relative',
+          minHeight: 0
+        }}>
+          <div 
+            style={{
+              position: 'absolute',
+              top: '6px',
+              bottom: '6px',
+              left: '8px',
+              right: '8px'
             }}
           >
-            ×
-          </button>
-        )}
-      </div>
-      <div style={{ 
-        flex: 1, 
-        backgroundColor: '#1e1e1e',
-        padding: '8px',
-        borderBottomLeftRadius: '8px',
-        borderBottomRightRadius: '8px',
-        position: 'relative',
-        minHeight: 0
-      }}>
-        <div 
-          style={{
-            position: 'absolute',
-            top: '8px',
-            bottom: '8px',
-            left: '8px',
-            right: '8px'
-          }}
-        >
-          <div 
-            ref={terminalRef} 
-            style={{ 
-              width: '100%',
-              height: '100%',
-              overflow: 'hidden', 
-            }} 
-          />
+            <div 
+              ref={terminalRef} 
+              style={{ 
+                width: '100%',
+                height: '100%',
+                overflow: 'hidden', 
+              }} 
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </Rnd>
   );
 };
 
