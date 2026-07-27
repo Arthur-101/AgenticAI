@@ -1,4 +1,4 @@
-import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip, Tag } from 'antd';
+import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip } from 'antd';
 import { open } from '@tauri-apps/plugin-dialog';
 import { 
   DeleteOutlined, 
@@ -16,11 +16,13 @@ import {
   PoweroffOutlined,
   SendOutlined,
   ClearOutlined,
-  PaperClipOutlined
+  PaperClipOutlined,
+  EyeOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -31,7 +33,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 const { Header, Content, Footer, Sider } = Layout;
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<Array<{role: string; content: string; model_id?: string}>>([]);
+  const [messages, setMessages] = useState<Array<{role: string; content: string; model_id?: string; attachments?: Array<{name: string; path: string; chunkCount?: number}>}>>([]);
   const [sessions, setSessions] = useState<Array<{session_id: string; title: string; created_at: string}>>([]);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
@@ -45,6 +47,14 @@ export default function ChatPanel() {
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Lightbox Preview & Image helper
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+
+  const isImageFile = (fileNameOrPath: string) => {
+    const ext = fileNameOrPath.split('.').pop()?.toLowerCase() || '';
+    return ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'svg'].includes(ext);
+  };
 
   // File Attachments & Vector RAG State
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; chunkCount?: number }>>([]);
@@ -80,11 +90,15 @@ export default function ChatPanel() {
         filters: [
           {
             name: 'All Supported Files',
-            extensions: ['txt', 'py', 'pdf', 'md', 'json', 'csv', 'js', 'ts', 'tsx', 'html', 'css', 'rs', 'log', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'yaml', 'yml']
+            extensions: ['txt', 'py', 'pdf', 'md', 'json', 'csv', 'js', 'ts', 'tsx', 'html', 'css', 'rs', 'log', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'mp3', 'mp4', 'm4a', 'wav', 'aac', 'flac', 'avi', 'mov', 'mkv', 'webm', 'yaml', 'yml']
           },
           {
             name: 'Images',
             extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']
+          },
+          {
+            name: 'Audio & Video',
+            extensions: ['mp3', 'mp4', 'm4a', 'wav', 'aac', 'flac', 'avi', 'mov', 'mkv', 'webm', 'ogg']
           },
           {
             name: 'All Files (*.*)',
@@ -226,11 +240,27 @@ export default function ChatPanel() {
     if (!sessionId) return;
     try {
       const history = await invoke<any[]>('get_chat_history', { sessionId, limit: 100 });
-      setMessages(history.map(item => ({
-        role: item.role,
-        content: item.content || item.content_raw || item.reply || item.response || '',
-        model_id: item.model_id
-      })));
+      setMessages(history.map(item => {
+        const rawContent = item.content || item.content_raw || item.reply || item.response || '';
+        let cleanContent = rawContent;
+        const attachments: Array<{ name: string; path: string }> = [];
+
+        if (item.role === 'user' && rawContent.includes('[Attached File:')) {
+          const fileRegex = /\[Attached File: ([^\|]+)\| Path: ([^\]]+)\]/g;
+          let match;
+          while ((match = fileRegex.exec(rawContent)) !== null) {
+            attachments.push({ name: match[1].trim(), path: match[2].trim() });
+          }
+          cleanContent = rawContent.replace(/\n\n\[Attached File: [^\]]+\]/g, '').replace(/\[Attached File: [^\]]+\]/g, '').trim();
+        }
+
+        return {
+          role: item.role,
+          content: cleanContent || rawContent,
+          model_id: item.model_id,
+          attachments: attachments.length > 0 ? attachments : undefined
+        };
+      }));
     } catch (error) {
       console.error('Failed to load chat history:', error);
       antdMessage.error(`Failed to load history: ${error}`);
@@ -242,13 +272,23 @@ export default function ChatPanel() {
     
     const userMessage = input.trim();
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+
+    // Append attached files context to the message payload if present
+    let payloadMessage = userMessage;
+    const currentAttachments = [...attachedFiles];
+    if (currentAttachments.length > 0) {
+      const fileNotes = currentAttachments.map(f => `[Attached File: ${f.name} | Path: ${f.path}]`).join('\n');
+      payloadMessage = `${userMessage}\n\n${fileNotes}`;
+    }
+
+    setMessages(prev => [...prev, { role: 'user', content: userMessage, attachments: currentAttachments }]);
     setIsLoading(true);
+    setAttachedFiles([]);
 
     try {
       const response = await invoke<any>('send_chat_message', {
         sessionId: sessionId || 'default',
-        message: userMessage,
+        message: payloadMessage,
         model: selectedModel === 'auto' ? null : selectedModel
       });
 
@@ -611,6 +651,41 @@ export default function ChatPanel() {
                         )}
 
                         <div style={{ maxWidth: '82%' }}>
+                          {/* Attached Files in Chat History (Gemini / ChatGPT Style) */}
+                          {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                              {msg.attachments.map((att, attIdx) => {
+                                const isImg = isImageFile(att.name || att.path);
+                                const imgSrc = convertFileSrc(att.path);
+                                return isImg ? (
+                                  <div
+                                    key={attIdx}
+                                    className="attachment-image-thumb"
+                                    onClick={() => setPreviewImage({ url: imgSrc, title: att.name })}
+                                    style={{ width: 80, height: 80 }}
+                                  >
+                                    <img src={imgSrc} alt={att.name} />
+                                    <div className="zoom-overlay">
+                                      <EyeOutlined />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div
+                                    key={attIdx}
+                                    className="attachment-card"
+                                    onClick={() => setPreviewImage({ url: imgSrc, title: att.name })}
+                                    style={{ cursor: 'pointer' }}
+                                  >
+                                    <FileTextOutlined style={{ fontSize: 16, color: '#38bdf8' }} />
+                                    <span style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 500 }}>
+                                      {att.name}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
                           <div className="chat-markdown-content" style={{ 
                             background: msg.role === 'user' 
                               ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' 
@@ -778,21 +853,61 @@ export default function ChatPanel() {
               multiple 
             />
             {attachedFiles.length > 0 && (
-              <div style={{ maxWidth: '850px', margin: '0 auto 8px auto', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: '#c084fc', fontWeight: 600 }}>
-                  📄 Indexed Vector Documents ({attachedFiles.length}):
-                </span>
-                {attachedFiles.map((file, idx) => (
-                  <Tag
-                    key={idx}
-                    color="purple"
-                    closable
-                    onClose={() => setAttachedFiles(prev => prev.filter(f => f.path !== file.path))}
-                    style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '6px', background: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.4)', color: '#e9d5ff' }}
-                  >
-                    {file.name} ({file.chunkCount || 1} chunks)
-                  </Tag>
-                ))}
+              <div style={{
+                maxWidth: '850px',
+                margin: '0 auto 10px auto',
+                display: 'flex',
+                gap: '10px',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                padding: '8px 12px',
+                background: 'rgba(15, 23, 42, 0.65)',
+                borderRadius: '14px',
+                border: '1px solid rgba(56, 189, 248, 0.2)',
+                backdropFilter: 'blur(12px)'
+              }}>
+                {attachedFiles.map((file, idx) => {
+                  const isImg = isImageFile(file.name || file.path);
+                  const imgSrc = convertFileSrc(file.path);
+                  return isImg ? (
+                    <div
+                      key={idx}
+                      className="attachment-image-thumb"
+                      onClick={() => setPreviewImage({ url: imgSrc, title: file.name })}
+                    >
+                      <img src={imgSrc} alt={file.name} />
+                      <div className="zoom-overlay">
+                        <EyeOutlined />
+                      </div>
+                      <button
+                        className="attachment-remove-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAttachedFiles(prev => prev.filter(f => f.path !== file.path));
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div key={idx} className="attachment-card">
+                      <FileTextOutlined style={{ fontSize: 16, color: '#38bdf8' }} />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 600 }}>{file.name}</span>
+                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>{file.chunkCount || 1} chunks</span>
+                      </div>
+                      <button
+                        className="attachment-remove-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAttachedFiles(prev => prev.filter(f => f.path !== file.path));
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', maxWidth: '850px', margin: '0 auto', gap: '8px' }}>
@@ -1013,6 +1128,38 @@ export default function ChatPanel() {
           </div>
         </Sider>
       </Layout>
+
+      {/* Image Lightbox Zoom Modal (Gemini / ChatGPT Style) */}
+      <Modal
+        open={!!previewImage}
+        footer={null}
+        onCancel={() => setPreviewImage(null)}
+        centered
+        width="auto"
+        styles={{
+          body: {
+            background: 'transparent',
+            padding: '10px'
+          }
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '13px', color: '#38bdf8', marginBottom: '12px', fontWeight: 600, fontFamily: '"Fira Code", monospace' }}>
+            📄 {previewImage?.title}
+          </div>
+          <img
+            src={previewImage?.url}
+            alt={previewImage?.title}
+            style={{
+              maxWidth: '85vw',
+              maxHeight: '80vh',
+              borderRadius: '12px',
+              objectFit: 'contain',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.6)'
+            }}
+          />
+        </div>
+      </Modal>
     </Layout>
   );
 }

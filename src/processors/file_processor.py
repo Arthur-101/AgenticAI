@@ -4,7 +4,7 @@ from typing import Optional
 
 class FileProcessor:
     """
-    Handles processing of various file types like .txt, .py, .pdf, images.
+    Handles processing of various file types like .txt, .py, .pdf, images, audio, video.
     Extracts text content to be used by the AI model as context.
     """
     
@@ -29,6 +29,9 @@ class FileProcessor:
         # Image files
         elif ext in ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff']:
             return FileProcessor._process_image(file_path)
+        # Audio / Video media files
+        elif ext in ['.mp3', '.mp4', '.m4a', '.wav', '.aac', '.flac', '.avi', '.mov', '.mkv', '.webm', '.ogg']:
+            return FileProcessor._process_media(file_path)
         else:
             return FileProcessor._process_fallback(file_path)
             
@@ -71,6 +74,16 @@ class FileProcessor:
                 return f"[Attached Image: {file_name} | Path: {file_path} | Format: {fmt} | Dimensions: {width}x{height} | Color Mode: {mode} | Size: {file_size} bytes]"
         except Exception:
             return f"[Attached Image: {file_name} | Path: {file_path} | Size: {file_size} bytes]"
+
+    @staticmethod
+    def _process_media(file_path: str) -> str:
+        """Process audio/video media file and extract size/type metadata."""
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        size_mb = file_size / (1024 * 1024)
+        _, ext = os.path.splitext(file_path)
+        media_type = "Audio" if ext.lower() in ['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg'] else "Video"
+        return f"[Attached {media_type} File: {file_name} | Extension: {ext} | Path: {file_path} | Size: {size_mb:.2f} MB ({file_size} bytes)]"
 
     @staticmethod
     def _process_fallback(file_path: str) -> str:

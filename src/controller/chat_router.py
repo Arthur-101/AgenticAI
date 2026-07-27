@@ -1,4 +1,5 @@
 """Chat router with context assembly, summarization, and tag-based retrieval."""
+import os
 import asyncio
 import re
 from pathlib import Path
@@ -288,14 +289,31 @@ class ChatRouter:
                 context_messages.insert(-1, Message(role="system", content=f"Relevant factual memories about the user/project retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Use these retrieved memories ONLY if they are directly relevant to the user's current request. Do not mention them if they are unrelated."))
 
         # Search vector store for relevant indexed document chunks (RAG)
-        doc_results = self.vector_store.search_documents(query=user_message, limit=3)
+        doc_results = self.vector_store.search_documents(query=user_message, limit=5)
+        
+        # If explicitly attached files are in the prompt, also search by file name/path to guarantee retrieval
+        file_matches = re.findall(r'\[Attached File: ([^\|]+)\| Path: ([^\]]+)\]', user_message)
+        existing_paths = {item.get("metadata", {}).get("file_path") for item in doc_results if item.get("metadata")}
+        
+        for file_name, file_path in file_matches:
+            file_name = file_name.strip()
+            file_path = file_path.strip()
+            if file_path not in existing_paths:
+                extra_chunks = self.vector_store.search_documents(query=file_name, limit=3)
+                if extra_chunks:
+                    for chunk in extra_chunks:
+                        doc_results.append(chunk)
+                    existing_paths.add(file_path)
+
         if doc_results:
             doc_context_texts = []
+            seen_chunks = set()
             for item in doc_results:
                 file_p = item.get("metadata", {}).get("file_path", "Document")
                 file_name = os.path.basename(file_p)
                 content_chunk = item.get("content", "").strip()
-                if content_chunk:
+                if content_chunk and content_chunk not in seen_chunks:
+                    seen_chunks.add(content_chunk)
                     doc_context_texts.append(f"[{file_name}]:\n{content_chunk}")
                     
             if doc_context_texts:
