@@ -77,10 +77,20 @@ export default function ChatPanel() {
     try {
       const selected = await open({
         multiple: true,
-        filters: [{
-          name: 'Documents & Code',
-          extensions: ['txt', 'py', 'pdf', 'md', 'json', 'csv', 'js', 'ts', 'tsx', 'html', 'css', 'rs', 'log']
-        }]
+        filters: [
+          {
+            name: 'All Supported Files',
+            extensions: ['txt', 'py', 'pdf', 'md', 'json', 'csv', 'js', 'ts', 'tsx', 'html', 'css', 'rs', 'log', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'yaml', 'yml']
+          },
+          {
+            name: 'Images',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']
+          },
+          {
+            name: 'All Files (*.*)',
+            extensions: ['*']
+          }
+        ]
       });
 
       if (!selected) return;
