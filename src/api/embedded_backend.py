@@ -229,6 +229,19 @@ class EmbeddedBackend:
             char_count = len(content)
             chunk_count = (char_count // 800) + 1
             
+            data_url = None
+            _, ext = os.path.splitext(file_path)
+            ext_lower = ext.lower()
+            if ext_lower in ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.svg']:
+                try:
+                    import base64
+                    with open(file_path, 'rb') as img_f:
+                        encoded = base64.b64encode(img_f.read()).decode('utf-8')
+                        mime = 'image/png' if ext_lower == '.png' else 'image/jpeg' if ext_lower in ['.jpg', '.jpeg'] else f'image/{ext_lower[1:]}'
+                        data_url = f"data:{mime};base64,{encoded}"
+                except Exception as img_err:
+                    print(f"Error encoding image base64: {img_err}", file=sys.stderr)
+
             return {
                 "jsonrpc": "2.0",
                 "result": {
@@ -237,7 +250,8 @@ class EmbeddedBackend:
                     "file_name": file_name,
                     "character_count": char_count,
                     "chunk_count": chunk_count,
-                    "content_snippet": content[:300]
+                    "content_snippet": content[:300],
+                    "data_url": data_url
                 },
                 "id": params.get("request_id")
             }

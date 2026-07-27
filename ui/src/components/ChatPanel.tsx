@@ -49,15 +49,39 @@ export default function ChatPanel() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Lightbox Preview & Image helper
-  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string; path?: string } | null>(null);
 
   const isImageFile = (fileNameOrPath: string) => {
     const ext = fileNameOrPath.split('.').pop()?.toLowerCase() || '';
     return ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'svg'].includes(ext);
   };
 
+  const getSafeImageSrc = (att: { dataUrl?: string; path?: string }) => {
+    if (att.dataUrl) return att.dataUrl;
+    if (att.path) {
+      const normalized = att.path.replace(/\\/g, '/');
+      return convertFileSrc(normalized);
+    }
+    return '';
+  };
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>, filePath?: string) => {
+    const target = e.currentTarget;
+    if (filePath && !target.dataset.retried) {
+      target.dataset.retried = 'true';
+      invoke<any>('index_document', { filePath }).then(res => {
+        if (res && res.data_url) {
+          target.src = res.data_url;
+          setPreviewImage(prev => (prev && prev.path === filePath) ? { ...prev, url: res.data_url } : prev);
+        }
+      }).catch(err => {
+        console.warn('Fallback image fetch error:', err);
+      });
+    }
+  };
+
   // File Attachments & Vector RAG State
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; chunkCount?: number }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; chunkCount?: number; dataUrl?: string }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processAndIndexFile = async (filePath: string) => {
@@ -70,7 +94,8 @@ export default function ChatPanel() {
         const newFile = {
           name: fileName,
           path: filePath,
-          chunkCount: result.chunk_count
+          chunkCount: result.chunk_count,
+          dataUrl: result.data_url
         };
         setAttachedFiles(prev => [...prev.filter(f => f.path !== filePath), newFile]);
         antdMessage.success(`Indexed "${fileName}" into Vector DB (${result.chunk_count} chunks, ${result.character_count} chars)!`);
@@ -656,15 +681,19 @@ export default function ChatPanel() {
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: '8px' }}>
                               {msg.attachments.map((att, attIdx) => {
                                 const isImg = isImageFile(att.name || att.path);
-                                const imgSrc = convertFileSrc(att.path);
+                                const imgSrc = getSafeImageSrc(att);
                                 return isImg ? (
                                   <div
                                     key={attIdx}
                                     className="attachment-image-thumb"
-                                    onClick={() => setPreviewImage({ url: imgSrc, title: att.name })}
+                                    onClick={(e) => {
+                                      const imgEl = e.currentTarget.querySelector('img');
+                                      const activeSrc = imgEl?.src || (att as any).dataUrl || getSafeImageSrc(att);
+                                      setPreviewImage({ url: activeSrc, title: att.name, path: att.path });
+                                    }}
                                     style={{ width: 80, height: 80 }}
                                   >
-                                    <img src={imgSrc} alt={att.name} />
+                                    <img src={imgSrc} alt={att.name} onError={(e) => handleImageError(e, att.path)} />
                                     <div className="zoom-overlay">
                                       <EyeOutlined />
                                     </div>
@@ -673,7 +702,7 @@ export default function ChatPanel() {
                                   <div
                                     key={attIdx}
                                     className="attachment-card"
-                                    onClick={() => setPreviewImage({ url: imgSrc, title: att.name })}
+                                    onClick={() => setPreviewImage({ url: imgSrc, title: att.name, path: att.path })}
                                     style={{ cursor: 'pointer' }}
                                   >
                                     <FileTextOutlined style={{ fontSize: 16, color: '#38bdf8' }} />
@@ -868,14 +897,18 @@ export default function ChatPanel() {
               }}>
                 {attachedFiles.map((file, idx) => {
                   const isImg = isImageFile(file.name || file.path);
-                  const imgSrc = convertFileSrc(file.path);
+                  const imgSrc = getSafeImageSrc(file);
                   return isImg ? (
                     <div
                       key={idx}
                       className="attachment-image-thumb"
-                      onClick={() => setPreviewImage({ url: imgSrc, title: file.name })}
+                      onClick={(e) => {
+                        const imgEl = e.currentTarget.querySelector('img');
+                        const activeSrc = imgEl?.src || file.dataUrl || getSafeImageSrc(file);
+                        setPreviewImage({ url: activeSrc, title: file.name, path: file.path });
+                      }}
                     >
-                      <img src={imgSrc} alt={file.name} />
+                      <img src={imgSrc} alt={file.name} onError={(e) => handleImageError(e, file.path)} />
                       <div className="zoom-overlay">
                         <EyeOutlined />
                       </div>
@@ -1150,6 +1183,7 @@ export default function ChatPanel() {
           <img
             src={previewImage?.url}
             alt={previewImage?.title}
+            onError={(e) => handleImageError(e, previewImage?.path)}
             style={{
               maxWidth: '85vw',
               maxHeight: '80vh',
