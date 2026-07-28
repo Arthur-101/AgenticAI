@@ -15,6 +15,8 @@ from src.utils.config import config
 from src.processors.file_processor import FileProcessor
 from src.tools.basic_tools import ToolManager
 from src.tools.terminal_manager import terminal_manager
+from src.aggregators.sub_agent_manager import SubAgentManager
+from src.aggregators.consensus_aggregator import ConsensusAggregator
 import json
 
 
@@ -95,19 +97,38 @@ class ChatRouter:
             is_supervisor=is_supervisor,
         )
         
-        # Determine which model to use
-        model_type = await self._select_model(
-            user_message=user_message,
-            context=context,
-            model_override=model_override,
-        )
-        
-        # Get assistant response
-        assistant_response = await self._get_assistant_response(
-            context=context,
-            model_type=model_type,
-            session_id=effective_session_id,
-        )
+        # Check for Multi-Model Team Collaborative execution mode
+        if model_override in ["collaborative", "team", "multi_model"]:
+            sub_manager = SubAgentManager(self.client)
+            consensus = ConsensusAggregator(self.client)
+            
+            has_media = any(tag in user_message for tag in ["[Attached Image:", "[Attached Media:"])
+            sub_results = await sub_manager.run_collaborative_team(
+                user_message=user_message,
+                context=[{"role": m.role, "content": m.content} for m in context.assembled_messages],
+                has_multimodal_attachments=has_media
+            )
+            
+            aggregated = await consensus.synthesize_response(user_message, sub_results)
+            assistant_response = {
+                "content": aggregated["content"],
+                "model_id": "multi-model-team",
+                "tokens_used": aggregated.get("tokens_used", 0)
+            }
+        else:
+            # Determine which model to use
+            model_type = await self._select_model(
+                user_message=user_message,
+                context=context,
+                model_override=model_override,
+            )
+            
+            # Get assistant response
+            assistant_response = await self._get_assistant_response(
+                context=context,
+                model_type=model_type,
+                session_id=effective_session_id,
+            )
         
         # Save assistant message
         assistant_msg_id = self.memory_store.save_message(

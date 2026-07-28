@@ -93,7 +93,7 @@ OPENROUTER_API_KEY=your_actual_api_key_here
 # MODEL_GEMINI_FLASH=google/gemini-2.5-flash-lite
 # MODEL_MIMO=mimo/mimo-v2-pro
 # MODEL_DEEPSEEK=deepseek/deepseek-v3.2
-# MODEL_GEMINI_PRO=google/gemini-3.1-pro
+# MODEL_GEMINI_PRO=google/gemini-2.5-flash-lite
 
 # Optional: Adjust cost limits
 # COST_WARNING_THRESHOLD=10.0

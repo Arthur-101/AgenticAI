@@ -76,7 +76,7 @@ Create a multi-model AI agent system using OpenRouter APIs with MCP-style archit
 2. **Cheap Fast Model** (small tasks): gemini-2.5-flash-lite
 3. **Planner/Reasoning Layer** (complex tasks): deepseek-v4-pro / mimo-v2.5-pro
 4. **Coding/Execution Model**: deepseek-v4-flash
-5. **Multimodal Layer** (rare use): gemini-3.1-pro
+5. **Multimodal Layer** (rare use): gemini-2.5-flash-lite
 
 **Environment Configuration**
 - `AGENTICAI_DEFAULT_CHAT_MODEL` – default chat model (default: `qwen3.5-flash-02-23`).
@@ -192,7 +192,11 @@ data/
   - Created and updated standalone top-level Notion page: `🚀 AgenticAI - Master Project Tracker & Executed Status` (Page ID: `341c8b7b-66a5-80ed-b7ba-dddb5d3ea0d9`).
   - Populated Notion page with project overview, model routing architecture, completed Phase 1/2/3 milestones, active tasks, and future roadmap.
 - **Advanced Redis Memory Synchronization & Auto-Start (`src/memory/redis_store.py`)**:
-  - Implemented automatic process launcher (`_try_auto_start_redis`): detects and spawns native Windows `redis-server.exe` or `memurai.exe` automatically if Redis is offline when AgenticAI launches.
+  - Bundled portable Redis v5.0 binary at `bin/redis/redis-server.exe` — zero install required.
+  - Auto-starts bundled Redis on app launch, stores data in `data/redis/dump.rdb`.
+  - Registers `atexit` hook to cleanly terminate Redis when the app quits.
+  - Uses `protocol=2` (RESP2) for redis-py v5+ compatibility with bundled Redis v5.0.
+  - Implemented retry loop (10x × 0.5s) to wait for Redis to fully bind port 6379 before connecting.
   - Implemented multi-process Pub/Sub message broadcasting (`publish_message`, `subscribe_events`).
   - Implemented active session state and assembled context caching (`cache_assembled_context`, `get_assembled_context`).
   - Implemented distributed locking (`acquire_lock`, `release_lock`) for multi-process concurrency control.
@@ -210,3 +214,7 @@ data/
 - **Dark Glass Modal & App-Wide Theme System (`ui/src/main.tsx`, `ui/src/global.css`, `ui/src/components/ChatPanel.tsx`)**:
   - Configured `ConfigProvider` with `algorithm: theme.darkAlgorithm` globally in `main.tsx` so all Ant Design components (Modals, Cards, Popconfirms, Inputs, Tooltips, Lists) default to dark mode.
   - Applied dark glassmorphic CSS overrides (`rgba(15, 23, 42, 0.95)`, `20px` backdrop blur, cyan focus outlines, dark input controls) matching the overall app design.
+- **Multi-Model Sub-Agent Collaboration & Output Aggregator (`src/aggregators/sub_agent_manager.py` & `src/aggregators/consensus_aggregator.py`)**:
+  - Built `SubAgentManager`: Spawns parallel background workers (`deepseek/deepseek-v4-flash` for coding, `deepseek/deepseek-v4-pro` for reasoning/architecture, and `google/gemini-2.5-flash-lite` for multimodal attachments) using `asyncio.gather()`.
+  - Built `ConsensusAggregator`: Synthesizes sub-agent outputs via `google/gemini-2.5-flash-lite` or `qwen/qwen3.5-flash-02-23` to eliminate duplicates, resolve conflicting suggestions, and output a unified master response.
+  - Added **🤝 Multi-Model Team** option to the model selection dropdown in `ui/src/components/ChatPanel.tsx`.

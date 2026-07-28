@@ -30,7 +30,7 @@ Proposed feature rollout (one‑by‑one, in priority order)
 - Cheap Fast Model (small tasks): gemini-2.5-flash-lite
 - Planner/Reasoning Layer (complex tasks): deepseek-v4-pro / mimo-v2.5-pro
 - Coding/Execution Model: deepseek-v4-flash
-- Multimodal Layer (rare use): gemini-3.1-pro
+- Multimodal Layer (rare use): gemini-2.5-flash-lite
 
 ## **Pipeline**
 

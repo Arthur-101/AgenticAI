@@ -39,12 +39,22 @@ export default function ChatPanel() {
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
   const [backendRunning, setBackendRunning] = useState(false);
+  const [redisConnected, setRedisConnected] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('auto');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [memories, setMemories] = useState<Array<{id: string, role: string, content: string, tags: string[], created_at: string}>>([]);
   const [backendLogs, setBackendLogs] = useState<string[]>([]);
+
+  // Detect Redis connectivity from backend stderr log stream
+  const detectRedisStatus = (logLine: string) => {
+    if (logLine.includes('Connected to Redis memory store')) {
+      setRedisConnected(true);
+    } else if (logLine.includes('Redis connection unavailable') || logLine.includes('Redis auto-start completed, but ping failed')) {
+      setRedisConnected(false);
+    }
+  };
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
   const [newMemoryContent, setNewMemoryContent] = useState('');
@@ -219,6 +229,8 @@ export default function ChatPanel() {
       }
       
       if (!isMounted) return;
+      // Detect Redis status from log stream
+      detectRedisStatus(event.payload);
       setBackendLogs(prev => {
         if (prev.length > 0 && prev[prev.length - 1] === event.payload) {
           return prev; // Prevent duplicate consecutive logs
@@ -630,6 +642,34 @@ export default function ChatPanel() {
               <span className={backendRunning ? "status-dot-pulsing" : ""} style={{ width: 6, height: 6, borderRadius: '50%', background: backendRunning ? '#22c55e' : '#ef4444' }} />
               {backendRunning ? 'Ready' : 'Offline'}
             </span>
+            {/* Redis Status Badge */}
+            {backendRunning && (
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 500,
+                padding: '2px 8px',
+                borderRadius: '12px',
+                backgroundColor: redisConnected === null
+                  ? 'rgba(100, 116, 139, 0.15)'
+                  : redisConnected
+                    ? 'rgba(34, 197, 94, 0.12)'
+                    : 'rgba(239, 68, 68, 0.12)',
+                color: redisConnected === null ? '#94a3b8' : redisConnected ? '#4ade80' : '#f87171',
+                border: `1px solid ${redisConnected === null ? 'rgba(100,116,139,0.3)' : redisConnected ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                marginLeft: '4px',
+              }}>
+                <span style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: redisConnected === null ? '#94a3b8' : redisConnected ? '#22c55e' : '#ef4444',
+                }} />
+                Redis {redisConnected === null ? '...' : redisConnected ? 'Live' : 'Off'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1063,12 +1103,13 @@ export default function ChatPanel() {
                 style={{ width: 170 }}
                 disabled={!backendRunning || isLoading}
                 options={[
-                  { value: 'auto', label: 'Auto (Supervisor)' },
+                  { value: 'auto', label: '⚡ Auto (Supervisor)' },
+                  { value: 'collaborative', label: '🤝 Multi-Model Team' },
                   { value: 'qwen', label: 'Qwen 3.5 Flash' },
                   { value: 'gemini-flash', label: 'Gemini 2.5 Flash' },
-                  { value: 'deepseek', label: 'DeepSeek v3.2' },
-                  { value: 'mimo', label: 'MIMO v2 Pro' },
-                  { value: 'gemini-pro', label: 'Gemini 3.1 Pro' },
+                  { value: 'deepseek-flash', label: 'DeepSeek v4 Flash' },
+                  { value: 'deepseek-pro', label: 'DeepSeek v4 Pro' },
+                  { value: 'mimo', label: 'MIMO v2.5' },
                 ]}
               />
               <Tooltip title="Attach Document / Code File (RAG Vector Memory)">

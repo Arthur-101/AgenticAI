@@ -20,37 +20,89 @@ class RedisMemoryStore:
         self.client = None
         self.pubsub = None
         self._listener_thread = None
+        self._redis_process = None  # Tracks the auto-started Redis subprocess
         self.connect()
 
     def _try_auto_start_redis(self) -> bool:
-        """Attempt to automatically start native Windows redis-server or memurai if installed."""
+        """
+        Attempt to automatically start Redis.
+        Priority:
+          1. Bundled portable redis-server.exe (bin/redis/redis-server.exe) inside the project.
+          2. Native system-wide installation (PATH / common Windows dirs).
+        Tracks the spawned process and registers an atexit hook to shut it down on quit.
+        """
+        import atexit
+        from pathlib import Path
+
+        # Locate project root (this file is at src/memory/redis_store.py)
+        project_root = Path(__file__).resolve().parents[2]
+        bundled = project_root / "bin" / "redis" / "redis-server.exe"
+
+        candidates = [
+            str(bundled),
+            shutil.which("redis-server"),
+            shutil.which("memurai"),
+            r"C:\Program Files\Redis\redis-server.exe",
+            r"C:\Program Files\Memurai\memurai.exe",
+            r"C:\Redis\redis-server.exe",
+        ]
+
+        redis_bin = next((c for c in candidates if c and os.path.exists(c)), None)
+
+        if not redis_bin:
+            msg = "INFO: No Redis executable found (bundled or system). Falling back to SQLite."
+            logger.info(msg)
+            print(msg, file=sys.stderr, flush=True)
+            return False
+
         try:
-            # Check PATH or common Windows installation directories
-            candidates = [
-                shutil.which("redis-server"),
-                shutil.which("memurai"),
-                r"C:\Program Files\Redis\redis-server.exe",
-                r"C:\Program Files\Memurai\memurai.exe",
-                r"C:\Redis\redis-server.exe",
-            ]
-            
-            redis_bin = next((c for c in candidates if c and os.path.exists(c)), None)
-            if redis_bin:
-                logger.info(f"🚀 Auto-starting native Windows Redis process via {redis_bin}...")
-                flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) | getattr(subprocess, 'DETACHED_PROCESS', 0)
-                subprocess.Popen(
-                    [redis_bin],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=flags
-                )
-                time.sleep(1.5)
-                return True
-            else:
-                logger.info("Native Windows Redis executable (redis-server.exe / memurai.exe) not found. Falling back to SQLite.")
+            label = "bundled" if str(bundled) == redis_bin else "system"
+            msg = f"INFO: Auto-starting {label} Redis from {redis_bin}..."
+            logger.info(msg)
+            print(msg, file=sys.stderr, flush=True)
+
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            data_dir = project_root / "data" / "redis"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            proc = subprocess.Popen(
+                [redis_bin, "--port", "6379", "--loglevel", "warning",
+                 "--dir", str(project_root / "data" / "redis"),
+                 "--dbfilename", "dump.rdb"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=flags,
+            )
+            self._redis_process = proc
+
+            # Register shutdown hook: terminate Redis when Python process exits
+            def _shutdown_redis():
+                try:
+                    if proc.poll() is None:
+                        print("INFO: Shutting down bundled Redis server...", file=sys.stderr, flush=True)
+                        proc.terminate()
+                        proc.wait(timeout=5)
+                        print("INFO: Redis server stopped.", file=sys.stderr, flush=True)
+                except Exception as e:
+                    logger.debug(f"Redis shutdown error: {e}")
+
+            atexit.register(_shutdown_redis)
+
+            # Wait for Redis to be ready (retry up to 5s)
+            for _ in range(10):
+                time.sleep(0.5)
+                try:
+                    import redis as _redis
+                    test_client = _redis.Redis(host="localhost", port=6379, socket_timeout=1.0, protocol=2)
+                    test_client.ping()
+                    break  # Ready!
+                except Exception:
+                    continue
+            return True
+
         except Exception as err:
-            logger.debug(f"Native Windows Redis auto-start error: {err}")
-        return False
+            logger.debug(f"Redis auto-start error: {err}")
+            return False
+
 
     def connect(self) -> bool:
         """Attempt to connect or reconnect to Redis with auto-start capability."""
@@ -58,7 +110,7 @@ class RedisMemoryStore:
         
         # Try initial connection
         try:
-            self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2.0)
+            self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2.0, protocol=2)
             self.client.ping()
             msg = "INFO: Connected to Redis memory store successfully."
             logger.info(msg)
@@ -70,7 +122,7 @@ class RedisMemoryStore:
         # Try auto-starting Redis
         if self._try_auto_start_redis():
             try:
-                self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2.0)
+                self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2.0, protocol=2)
                 self.client.ping()
                 msg = "INFO: Connected to Redis memory store after auto-start."
                 logger.info(msg)
