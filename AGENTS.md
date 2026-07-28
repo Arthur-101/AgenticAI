@@ -186,3 +186,27 @@ data/
   - Built native System Tray Context Menu (`🟢 AgenticAI (Engine Active)`, `🖥️ Show Studio Window`, `➕ Start New Chat`, `⚡ Toggle AI Engine`, `❌ Quit AgenticAI`).
   - Added left-click toggle on the System Tray icon to instantly hide/unhide and focus the app window.
   - Connected `trigger-new-chat` and `trigger-toggle-engine` IPC event triggers from Tauri to React.
+- **MCP Configuration & Notion Master Project Tracker**:
+  - Configured Notion MCP server integration globally in settings.
+  - Successfully connected to Notion workspace via MCP tools (`call_mcp_tool`).
+  - Created and updated standalone top-level Notion page: `🚀 AgenticAI - Master Project Tracker & Executed Status` (Page ID: `341c8b7b-66a5-80ed-b7ba-dddb5d3ea0d9`).
+  - Populated Notion page with project overview, model routing architecture, completed Phase 1/2/3 milestones, active tasks, and future roadmap.
+- **Advanced Redis Memory Synchronization & Auto-Start (`src/memory/redis_store.py`)**:
+  - Implemented automatic process launcher (`_try_auto_start_redis`): detects and spawns native Windows `redis-server.exe` or `memurai.exe` automatically if Redis is offline when AgenticAI launches.
+  - Implemented multi-process Pub/Sub message broadcasting (`publish_message`, `subscribe_events`).
+  - Implemented active session state and assembled context caching (`cache_assembled_context`, `get_assembled_context`).
+  - Implemented distributed locking (`acquire_lock`, `release_lock`) for multi-process concurrency control.
+  - Added auto-reconnection and graceful SQLite fallback when Redis is offline.
+- **Global Memory & Persona System UI (`ui/src/components/ChatPanel.tsx` & `src/api/embedded_backend.py`)**:
+  - Fixed memory loading invoke call (`get_all_memories`).
+  - Fixed Tauri IPC parameter names (`messageId`, `memoryId`) for `update_memory` and `delete_memory` so editing and deleting entries work cleanly.
+  - Added automatic memory fetching whenever the Settings modal opens.
+  - Built **Add New Global Memory** form allowing manual entry creation.
+  - Implemented `add_memory` endpoint across JSON-RPC backend (`embedded_backend.py`), Tauri IPC (`lib.rs`), SQLite (`sqlite_store.py`), and ChromaDB vector store.
+  - Full support for viewing, adding, editing, deleting, and auto-extracting conversational facts globally.
+- **Smart Memory Curation & Auto-Consolidation (`src/models/openrouter_client.py` & `src/controller/chat_router.py`)**:
+  - Refined memory extraction system prompt to strictly filter out transient commentary ("they fixed it", "duration was 5 mins", "ran a terminal command") and extract ONLY enduring personal facts, user preferences, and system specs.
+  - Built `consolidate_memory_actions` engine: Compares new facts against existing memories to automatically `UPDATE`, `ADD`, or `SKIP` entries in both SQLite and ChromaDB vector database.
+- **Dark Glass Modal & App-Wide Theme System (`ui/src/main.tsx`, `ui/src/global.css`, `ui/src/components/ChatPanel.tsx`)**:
+  - Configured `ConfigProvider` with `algorithm: theme.darkAlgorithm` globally in `main.tsx` so all Ant Design components (Modals, Cards, Popconfirms, Inputs, Tooltips, Lists) default to dark mode.
+  - Applied dark glassmorphic CSS overrides (`rgba(15, 23, 42, 0.95)`, `20px` backdrop blur, cyan focus outlines, dark input controls) matching the overall app design.

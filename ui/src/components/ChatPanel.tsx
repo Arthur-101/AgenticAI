@@ -1,4 +1,4 @@
-import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip } from 'antd';
+import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip, Card } from 'antd';
 import { open } from '@tauri-apps/plugin-dialog';
 import { 
   DeleteOutlined, 
@@ -18,7 +18,8 @@ import {
   ClearOutlined,
   PaperClipOutlined,
   EyeOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  BulbOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
@@ -46,6 +47,7 @@ export default function ChatPanel() {
   const [backendLogs, setBackendLogs] = useState<string[]>([]);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
+  const [newMemoryContent, setNewMemoryContent] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Lightbox Preview & Image helper
@@ -195,7 +197,9 @@ export default function ChatPanel() {
   useEffect(() => {
     initializeBackend();
     
-    let unlisten: (() => void) | undefined;
+    let unlistenLog: (() => void) | undefined;
+    let unlistenNewChat: (() => void) | undefined;
+    let unlistenToggleEngine: (() => void) | undefined;
     let isMounted = true;
 
     listen<string>('backend-log', (event) => {
@@ -214,7 +218,11 @@ export default function ChatPanel() {
         return;
       }
       
+      if (!isMounted) return;
       setBackendLogs(prev => {
+        if (prev.length > 0 && prev[prev.length - 1] === event.payload) {
+          return prev; // Prevent duplicate consecutive logs
+        }
         const newLogs = [...prev, event.payload];
         if (newLogs.length > 200) return newLogs.slice(newLogs.length - 200);
         return newLogs;
@@ -223,18 +231,20 @@ export default function ChatPanel() {
       if (!isMounted) {
         fn();
       } else {
-        unlisten = fn;
+        unlistenLog = fn;
       }
     }).catch(err => console.error("Failed to setup log listener", err));
     
-    let unlistenNewChat: (() => void) | undefined;
-    let unlistenToggleEngine: (() => void) | undefined;
-
     listen('trigger-new-chat', () => {
+      if (!isMounted) return;
       handleCreateSession();
-    }).then(fn => { unlistenNewChat = fn; });
+    }).then(fn => {
+      if (!isMounted) fn();
+      else unlistenNewChat = fn;
+    });
 
     listen('trigger-toggle-engine', async () => {
+      if (!isMounted) return;
       try {
         const isRunning = await invoke<boolean>('backend_status');
         if (isRunning) {
@@ -249,11 +259,14 @@ export default function ChatPanel() {
       } catch (err) {
         console.error('Failed to toggle backend from tray:', err);
       }
-    }).then(fn => { unlistenToggleEngine = fn; });
+    }).then(fn => {
+      if (!isMounted) fn();
+      else unlistenToggleEngine = fn;
+    });
 
     return () => {
       isMounted = false;
-      if (unlisten) unlisten();
+      if (unlistenLog) unlistenLog();
       if (unlistenNewChat) unlistenNewChat();
       if (unlistenToggleEngine) unlistenToggleEngine();
     };
@@ -386,16 +399,37 @@ export default function ChatPanel() {
 
   const loadMemories = async () => {
     try {
-      const res = await invoke<any[]>('get_memories');
-      setMemories(res);
+      const res = await invoke<any[]>('get_all_memories');
+      setMemories(res || []);
     } catch (error) {
       console.error('Failed to load memories:', error);
     }
   };
 
+  useEffect(() => {
+    if (isSettingsOpen) {
+      loadMemories();
+    }
+  }, [isSettingsOpen]);
+
+  const handleAddMemory = async () => {
+    if (!newMemoryContent.trim()) {
+      antdMessage.warning('Please enter a memory text to save');
+      return;
+    }
+    try {
+      await invoke('add_memory', { content: newMemoryContent.trim() });
+      antdMessage.success('Memory saved globally!');
+      setNewMemoryContent('');
+      await loadMemories();
+    } catch (error) {
+      antdMessage.error(`Failed to save memory: ${error}`);
+    }
+  };
+
   const handleUpdateMemory = async (id: string) => {
     try {
-      await invoke('update_memory', { id, content: editingContent });
+      await invoke('update_memory', { messageId: id, content: editingContent });
       antdMessage.success('Memory updated');
       setEditingMemoryId(null);
       await loadMemories();
@@ -406,7 +440,7 @@ export default function ChatPanel() {
 
   const handleDeleteMemory = async (id: string) => {
     try {
-      await invoke('delete_memory', { id });
+      await invoke('delete_memory', { memoryId: id });
       antdMessage.success('Memory deleted');
       await loadMemories();
     } catch (error) {
@@ -418,19 +452,62 @@ export default function ChatPanel() {
     <Layout style={{ height: '100vh', width: '100vw', background: '#0b0f19', color: '#f1f5f9' }}>
       {/* Settings Modal */}
       <Modal
-        title="Agent Memories & Persona System"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <BulbOutlined style={{ color: '#38bdf8' }} />
+            <span style={{ color: '#f8fafc', fontWeight: 600 }}>Agent Memories & Persona System</span>
+          </div>
+        }
         open={isSettingsOpen}
         onCancel={() => setIsSettingsOpen(false)}
         footer={null}
-        width={700}
+        width={750}
+        styles={{
+          mask: { backdropFilter: 'blur(8px)', background: 'rgba(0, 0, 0, 0.7)' },
+          body: { background: '#0f172a', color: '#f8fafc' },
+          header: { background: 'transparent', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }
+        }}
       >
-        <Typography.Paragraph type="secondary">
-          View and edit stored long-term memory entries used for RAG context assembly.
+        <Typography.Paragraph type="secondary" style={{ marginBottom: '16px' }}>
+          Global memories are retained across all chat sessions and injected into RAG context assembly. You can add custom global memories or edit/delete existing ones.
         </Typography.Paragraph>
+
+        {/* Add Memory Form */}
+        <Card 
+          size="small" 
+          title="Add New Global Memory" 
+          style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: '20px' }}
+        >
+          <Input.TextArea
+            rows={3}
+            placeholder="e.g., Remember that I prefer dark mode, my API port is 8000, and I use Python 3.12."
+            value={newMemoryContent}
+            onChange={e => setNewMemoryContent(e.target.value)}
+            style={{ marginBottom: '12px', background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />} 
+              onClick={handleAddMemory}
+              style={{ background: '#0284c7', borderColor: '#0284c7' }}
+            >
+              Save Memory
+            </Button>
+          </div>
+        </Card>
+
+        {/* Memory List */}
+        <Typography.Text strong style={{ color: '#94a3b8', display: 'block', marginBottom: '8px' }}>
+          Stored Memories ({memories.length})
+        </Typography.Text>
+
         <List
           dataSource={memories}
+          locale={{ emptyText: 'No stored memories found. Add one above or ask the agent to remember something!' }}
           renderItem={item => (
             <List.Item
+              style={{ padding: '12px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
               actions={[
                 editingMemoryId === item.id ? (
                   <Button icon={<SaveOutlined />} type="link" onClick={() => handleUpdateMemory(item.id)}>Save</Button>
@@ -447,9 +524,17 @@ export default function ChatPanel() {
                   value={editingContent} 
                   onChange={e => setEditingContent(e.target.value)} 
                   autoSize={{ minRows: 2, maxRows: 6 }}
+                  style={{ background: '#0f172a', color: '#f8fafc' }}
                 />
               ) : (
-                <div style={{ whiteSpace: 'pre-wrap' }}>{item.content}</div>
+                <div style={{ width: '100%' }}>
+                  <div style={{ whiteSpace: 'pre-wrap', color: '#e2e8f0', fontSize: '14px' }}>{item.content}</div>
+                  {item.created_at && (
+                    <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                      Added: {new Date(item.created_at).toLocaleString()}
+                    </span>
+                  )}
+                </div>
               )}
             </List.Item>
           )}

@@ -336,3 +336,90 @@ body, .ant-typography, p, h1, h2, h3, h4, h5, h6, ul, li {
   background: rgba(59, 130, 246, 0.6);
 }
 
+/* Ant Design Dark Glass Modal & Popover Theme Overrides */
+.ant-modal-content {
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.75), 0 0 20px rgba(56, 189, 248, 0.15) !important;
+  color: #f8fafc !important;
+  border-radius: 16px !important;
+}
+
+.ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding-bottom: 12px !important;
+  margin-bottom: 16px !important;
+}
+
+.ant-modal-title {
+  color: #f8fafc !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+}
+
+.ant-modal-close {
+  color: #94a3b8 !important;
+  transition: all 0.2s ease !important;
+}
+
+.ant-modal-close:hover {
+  color: #38bdf8 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.ant-modal-body {
+  color: #e2e8f0 !important;
+}
+
+.ant-card {
+  background: rgba(30, 41, 59, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+}
+
+.ant-card-head {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #f8fafc !important;
+  font-weight: 600 !important;
+}
+
+.ant-card-head-title {
+  color: #38bdf8 !important;
+}
+
+.ant-input, .ant-input-affix-wrapper, textarea.ant-input {
+  background: #0b0f19 !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.ant-input::placeholder, textarea.ant-input::placeholder {
+  color: #64748b !important;
+}
+
+.ant-input:focus, textarea.ant-input:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2) !important;
+}
+
+.ant-list-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.ant-typography-secondary {
+  color: #94a3b8 !important;
+}
+
+.ant-popover-inner, .ant-popconfirm-inner {
+  background: #0f172a !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #f8fafc !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+}
+
+.ant-popconfirm-message-title {
+  color: #f8fafc !important;
+}
+

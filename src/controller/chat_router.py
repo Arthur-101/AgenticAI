@@ -69,6 +69,8 @@ class ChatRouter:
             model_id=None,
             tokens_used=0,
         )
+        if redis_store.is_connected():
+            redis_store.publish_message(effective_session_id, "user", user_message)
         
         # Extract tags from user message
         tags = []
@@ -115,6 +117,8 @@ class ChatRouter:
             model_id=assistant_response["model_id"],
             tokens_used=assistant_response.get("tokens_used", 0),
         )
+        if redis_store.is_connected():
+            redis_store.publish_message(effective_session_id, "assistant", assistant_response["content"], assistant_response["model_id"])
         
         # Summarize both messages asynchronously
         if use_summaries:
@@ -591,16 +595,34 @@ class ChatRouter:
             print(f"Error summarizing messages: {e}")
     
     async def _extract_and_save_facts(self, user_message: str, tags: List[str]):
-        """Extract factual memories and save them."""
+        """Extract factual memories, consolidate with existing memories, and auto-update."""
         try:
             facts = await self.client.extract_memory_facts(user_message)
-            for fact in facts:
-                # Save to sqlite user_memories
-                memory_id = self.memory_store.save_user_memory(fact, tags)
-                # Save to vector store user_memories
-                self.vector_store.add_user_memory(memory_id, fact)
+            if not facts:
+                return
+
+            existing_memories = self.memory_store.get_all_user_memories()
+            actions = await self.client.consolidate_memory_actions(existing_memories, facts)
+
+            for item in actions:
+                act = item.get("action")
+                if act == "add":
+                    content = item.get("content")
+                    if content:
+                        memory_id = self.memory_store.save_user_memory(content, tags)
+                        self.vector_store.add_user_memory(memory_id, content)
+                        print(f"🧠 Memory Added: {content}")
+                elif act == "update":
+                    m_id = item.get("memory_id")
+                    content = item.get("content")
+                    if m_id and content:
+                        self.memory_store.update_user_memory(m_id, content)
+                        self.vector_store.update_user_memory(m_id, content)
+                        print(f"🧠 Memory Auto-Updated [{m_id}]: {content}")
+                elif act == "skip":
+                    print("🧠 Memory Skipped (Already exists)")
         except Exception as e:
-            print(f"Error extracting and saving facts: {e}")
+            print(f"Error extracting and consolidating facts: {e}")
 
     def get_session_history(
         self,

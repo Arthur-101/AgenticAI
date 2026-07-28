@@ -349,6 +349,23 @@ async fn update_memory(
 }
 
 #[tauri::command]
+async fn add_memory(
+    app_handle: tauri::AppHandle,
+    content: String
+) -> Result<bool, String> {
+    let params = json!({
+        "content": content,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    
+    let result = send_json_rpc(&app_handle, "add_memory", params, None).await?;
+    
+    result.get("success")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| "No success flag in result".to_string())
+}
+
+#[tauri::command]
 async fn delete_memory(
     app_handle: tauri::AppHandle,
     memory_id: String
@@ -463,6 +480,7 @@ pub fn run() {
             get_all_sessions,
             delete_session,
             get_all_memories,
+            add_memory,
             update_memory,
             delete_memory,
             index_document,

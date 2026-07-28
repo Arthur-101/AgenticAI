@@ -408,10 +408,22 @@ class OpenRouterClient:
     ) -> List[str]:
         """Extract factual memories from a chat conversation."""
         try:
-            print(f"🧠 Background Task: Extracting new factual memories using {model_id}...")
+            print(f"🧠 Background Task: Extracting enduring factual memories using {model_id}...")
             messages = [
-                Message(role="system", content="Did the user mention any new facts about themselves, their preferences, or their project details in the following text? If yes, extract them as concise bullet points. If no, return the string 'NO_FACTS'."),
-                Message(role="user", content=f"Text to extract facts from:\n\n{content}"),
+                Message(
+                    role="system",
+                    content=(
+                        "You are an expert AI Memory Curator.\n"
+                        "Analyze the text and extract ONLY high-value, enduring personal facts, explicit preferences, system specs, "
+                        "project credentials/configurations, or direct user instructions ('remember that...').\n\n"
+                        "STRICT RULES:\n"
+                        "1. IGNORE transient chat updates, status commentary, commands executed, temporary bug reports (e.g., 'they fixed it', 'duration was 5 mins', 'ran a terminal command', 'updated some things').\n"
+                        "2. ONLY extract facts that remain true and useful for future sessions (e.g., 'User prefers dark mode', 'User's API port is 8080', 'User's preferred browser is Brave').\n"
+                        "3. If no high-value, enduring facts are mentioned, return ONLY 'NO_FACTS'.\n"
+                        "4. Output extracted facts as bullet points starting with '- '."
+                    )
+                ),
+                Message(role="user", content=f"Text to evaluate:\n\n{content}"),
             ]
             
             request = ChatRequest(
@@ -448,10 +460,73 @@ class OpenRouterClient:
                     return facts
             
             return []
-            
         except Exception as e:
-            print(f"Error in extracting memory facts: {e}")
+            print(f"Error extracting memory facts: {e}")
             return []
+
+    async def consolidate_memory_actions(
+        self,
+        existing_memories: List[Dict[str, Any]],
+        new_facts: List[str],
+        model_id: str = "openai/gpt-oss-120b",
+    ) -> List[Dict[str, Any]]:
+        """Compare new facts against existing memories to decide whether to ADD, UPDATE, or SKIP."""
+        if not new_facts:
+            return []
+            
+        if not existing_memories:
+            return [{"action": "add", "content": fact} for fact in new_facts]
+            
+        try:
+            memories_formatted = json.dumps([{"id": m["id"], "content": m["content"]} for m in existing_memories])
+            facts_formatted = json.dumps(new_facts)
+            
+            messages = [
+                Message(
+                    role="system",
+                    content=(
+                        "You are an AI Memory Consolidation Engine.\n"
+                        "Compare NEW_FACTS against EXISTING_MEMORIES.\n"
+                        "For each new fact, output a JSON object with:\n"
+                        "- {\"action\": \"update\", \"memory_id\": \"<existing_id>\", \"content\": \"<new_updated_fact>\"} if it updates/replaces an existing memory.\n"
+                        "- {\"action\": \"skip\"} if it is already recorded.\n"
+                        "- {\"action\": \"add\", \"content\": \"<fact>\"} if it is completely new.\n"
+                        "Output ONLY a valid JSON list of action objects."
+                    )
+                ),
+                Message(role="user", content=f"EXISTING_MEMORIES:\n{memories_formatted}\n\nNEW_FACTS:\n{facts_formatted}"),
+            ]
+            
+            request = ChatRequest(
+                model=model_id,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=500,
+                stream=False,
+            )
+            
+            response = await self.client.post(
+                f"{self.base_url}/chat/completions",
+                json=request.dict(exclude_none=True),
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            if "choices" in data and data["choices"]:
+                choice = data["choices"][0]
+                if "message" in choice and "content" in choice["message"]:
+                    raw_json = choice["message"]["content"].strip()
+                    # Clean markdown fence if present
+                    if "```" in raw_json:
+                        raw_json = raw_json.split("```")[1]
+                        if raw_json.startswith("json"):
+                            raw_json = raw_json[4:]
+                    raw_json = raw_json.strip()
+                    return json.loads(raw_json)
+        except Exception as e:
+            print(f"Memory consolidation fallback: {e}")
+            
+        return [{"action": "add", "content": fact} for fact in new_facts]
 
     async def extract_tags(
         self,

@@ -66,6 +66,8 @@ class EmbeddedBackend:
                 return self._handle_delete_session(params)
             elif method == "get_all_memories":
                 return self._handle_get_all_memories()
+            elif method == "add_memory":
+                return self._handle_add_memory(params)
             elif method == "update_memory":
                 return self._handle_update_memory(params)
             elif method == "delete_memory":
@@ -183,6 +185,28 @@ class EmbeddedBackend:
             "jsonrpc": "2.0",
             "result": {"memories": memories},
             "id": None
+        }
+
+    def _handle_add_memory(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        content = params.get("content", "").strip()
+        tags = params.get("tags", ["manual"])
+        if not content:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32602, "message": "Memory content cannot be empty"},
+                "id": params.get("request_id")
+            }
+        
+        memory_id = self.memory.save_user_memory(content, tags)
+        try:
+            self.router.vector_store.add_user_memory(memory_id, content)
+        except Exception as e:
+            print(f"Warning: Failed to add user memory to vector store: {e}", file=sys.stderr)
+            
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": True, "memory_id": memory_id},
+            "id": params.get("request_id")
         }
 
     def _handle_update_memory(self, params: Dict[str, Any]) -> Dict[str, Any]:
