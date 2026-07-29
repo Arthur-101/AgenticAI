@@ -1,4 +1,4 @@
-import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip, Card } from 'antd';
+import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip, Card, Tabs, Tag } from 'antd';
 import { open } from '@tauri-apps/plugin-dialog';
 import { 
   DeleteOutlined, 
@@ -19,7 +19,9 @@ import {
   PaperClipOutlined,
   EyeOutlined,
   FileTextOutlined,
-  BulbOutlined
+  BulbOutlined,
+  KeyOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
@@ -59,6 +61,101 @@ export default function ChatPanel() {
   const [editingContent, setEditingContent] = useState('');
   const [newMemoryContent, setNewMemoryContent] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Role Models & API Keys State
+  const [roleModels, setRoleModels] = useState<Record<string, string>>({
+    orchestrator: 'qwen/qwen3.5-flash-02-23',
+    coding: 'deepseek/deepseek-v4-flash',
+    reasoning: 'deepseek/deepseek-v4-pro',
+    multimodal: 'google/gemini-2.5-flash-lite',
+    synthesizer: 'google/gemini-2.5-flash-lite'
+  });
+  const [apiKeys, setApiKeys] = useState<Array<{id: string; provider: string; label: string; masked_value: string; is_active: number}>>([]);
+  const [newProvider, setNewProvider] = useState<string>('openrouter');
+  const [newKeyValue, setNewKeyValue] = useState<string>('');
+  const [newKeyLabel, setNewKeyLabel] = useState<string>('');
+  const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
+
+  const loadRoleModels = async () => {
+    try {
+      const res: any = await invoke('get_role_models');
+      if (res) {
+        setRoleModels(res);
+      }
+    } catch (err) {
+      console.error('Failed to load role models:', err);
+    }
+  };
+
+  const handleUpdateRoleModel = async (role: string, modelId: string) => {
+    try {
+      await invoke('update_role_model', { role, modelId });
+      setRoleModels(prev => ({ ...prev, [role]: modelId }));
+      antdMessage.success(`Model for [${role}] updated to ${modelId} (hot-reloaded in Redis!)`);
+    } catch (err) {
+      antdMessage.error(`Failed to update role model: ${err}`);
+    }
+  };
+
+  const loadApiKeys = async () => {
+    try {
+      const res: any = await invoke('get_api_keys');
+      if (Array.isArray(res)) {
+        setApiKeys(res);
+      }
+    } catch (err) {
+      console.error('Failed to load API keys:', err);
+    }
+  };
+
+  const handleAddApiKey = async () => {
+    if (!newKeyValue.trim()) {
+      antdMessage.warning('Please enter an API Key value');
+      return;
+    }
+    try {
+      await invoke('add_api_key', {
+        provider: newProvider,
+        keyValue: newKeyValue.trim(),
+        label: newKeyLabel.trim() || undefined
+      });
+      antdMessage.success(`API Key for [${newProvider}] saved to SQLite database!`);
+      setNewKeyValue('');
+      setNewKeyLabel('');
+      await loadApiKeys();
+    } catch (err) {
+      antdMessage.error(`Failed to save API Key: ${err}`);
+    }
+  };
+
+  const handleDeleteApiKey = async (provider: string) => {
+    try {
+      await invoke('delete_api_key', { provider });
+      antdMessage.success(`API Key for [${provider}] removed`);
+      await loadApiKeys();
+    } catch (err) {
+      antdMessage.error(`Failed to delete API Key: ${err}`);
+    }
+  };
+
+  const handleTestApiKey = async (provider: string, keyValue?: string) => {
+    setIsTestingKey(true);
+    try {
+      const res: any = await invoke('test_api_key', {
+        provider,
+        keyValue: keyValue || newKeyValue.trim()
+      });
+      if (res && res.success) {
+        antdMessage.success(`⚡ ${provider.toUpperCase()} API Key test successful!`);
+      } else {
+        antdMessage.error(`API Key test failed: ${res?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      antdMessage.error(`Failed to test API Key: ${err}`);
+    } finally {
+      setIsTestingKey(false);
+    }
+  };
 
   // Lightbox Preview & Image helper
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string; path?: string } | null>(null);
@@ -466,90 +563,216 @@ export default function ChatPanel() {
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <BulbOutlined style={{ color: '#38bdf8' }} />
-            <span style={{ color: '#f8fafc', fontWeight: 600 }}>Agent Memories & Persona System</span>
+            <SettingOutlined style={{ color: '#38bdf8' }} />
+            <span style={{ color: '#f8fafc', fontWeight: 600 }}>AgenticAI Settings & System Manager</span>
           </div>
         }
         open={isSettingsOpen}
         onCancel={() => setIsSettingsOpen(false)}
         footer={null}
-        width={750}
+        width={800}
         styles={{
           mask: { backdropFilter: 'blur(8px)', background: 'rgba(0, 0, 0, 0.7)' },
-          body: { background: '#0f172a', color: '#f8fafc' },
+          body: { background: '#0f172a', color: '#f8fafc', padding: '12px 24px 24px 24px' },
           header: { background: 'transparent', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }
         }}
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: '16px' }}>
-          Global memories are retained across all chat sessions and injected into RAG context assembly. You can add custom global memories or edit/delete existing ones.
-        </Typography.Paragraph>
+        <Tabs
+          defaultActiveKey="models"
+          items={[
+            {
+              key: 'models',
+              label: <span><KeyOutlined /> Models & API Keys</span>,
+              children: (
+                <div style={{ marginTop: '8px' }}>
+                  <Typography.Paragraph type="secondary" style={{ marginBottom: '16px', fontSize: '13px' }}>
+                    Configure models for each agent role. Swapping a model updates Redis hot-cache instantly and takes effect from the very next prompt! Add provider API keys below.
+                  </Typography.Paragraph>
 
-        {/* Add Memory Form */}
-        <Card 
-          size="small" 
-          title="Add New Global Memory" 
-          style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: '20px' }}
-        >
-          <Input.TextArea
-            rows={3}
-            placeholder="e.g., Remember that I prefer dark mode, my API port is 8000, and I use Python 3.12."
-            value={newMemoryContent}
-            onChange={e => setNewMemoryContent(e.target.value)}
-            style={{ marginBottom: '12px', background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button 
-              type="primary" 
-              icon={<PlusOutlined />} 
-              onClick={handleAddMemory}
-              style={{ background: '#0284c7', borderColor: '#0284c7' }}
-            >
-              Save Memory
-            </Button>
-          </div>
-        </Card>
+                  {/* Role Model Configuration Cards */}
+                  <Typography.Text strong style={{ color: '#38bdf8', display: 'block', marginBottom: '12px', fontSize: '14px' }}>
+                    ⚡ Dynamic Role Model Assignments
+                  </Typography.Text>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
+                    {[
+                      { role: 'orchestrator', label: '⚡ Main Orchestrator', desc: 'Fast, always-on default chat router' },
+                      { role: 'coding', label: '🤖 Coding Sub-Agent', desc: 'Code generation & execution specialist' },
+                      { role: 'reasoning', label: '💡 Reasoning Sub-Agent', desc: 'Architecture, logic & edge-case specialist' },
+                      { role: 'multimodal', label: '👁️ Multimodal Specialist', desc: 'Image, media & document analyzer' },
+                      { role: 'synthesizer', label: '🧩 Consensus Synthesizer', desc: 'Merges multi-model team outputs' },
+                    ].map(r => (
+                      <Card key={r.role} size="small" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+                        <div style={{ fontWeight: 600, color: '#f8fafc', marginBottom: '4px', fontSize: '13px' }}>{r.label}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>{r.desc}</div>
+                        <Input
+                          value={roleModels[r.role] || ''}
+                          placeholder="e.g. deepseek/deepseek-v4-flash"
+                          onChange={e => setRoleModels(prev => ({ ...prev, [r.role]: e.target.value }))}
+                          onBlur={e => handleUpdateRoleModel(r.role, e.target.value)}
+                          onPressEnter={e => handleUpdateRoleModel(r.role, (e.target as HTMLInputElement).value)}
+                          style={{ background: '#0f172a', color: '#38bdf8', borderColor: '#334155', fontSize: '12px' }}
+                        />
+                      </Card>
+                    ))}
+                  </div>
 
-        {/* Memory List */}
-        <Typography.Text strong style={{ color: '#94a3b8', display: 'block', marginBottom: '8px' }}>
-          Stored Memories ({memories.length})
-        </Typography.Text>
+                  {/* API Key Management */}
+                  <Typography.Text strong style={{ color: '#38bdf8', display: 'block', marginBottom: '12px', fontSize: '14px' }}>
+                    🔑 Provider API Keys (SQLite Stored)
+                  </Typography.Text>
 
-        <List
-          dataSource={memories}
-          locale={{ emptyText: 'No stored memories found. Add one above or ask the agent to remember something!' }}
-          renderItem={item => (
-            <List.Item
-              style={{ padding: '12px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
-              actions={[
-                editingMemoryId === item.id ? (
-                  <Button icon={<SaveOutlined />} type="link" onClick={() => handleUpdateMemory(item.id)}>Save</Button>
-                ) : (
-                  <Button icon={<EditOutlined />} type="link" onClick={() => { setEditingMemoryId(item.id); setEditingContent(item.content); }}>Edit</Button>
-                ),
-                <Popconfirm title="Delete memory?" onConfirm={() => handleDeleteMemory(item.id)}>
-                  <Button icon={<DeleteOutlined />} type="link" danger>Delete</Button>
-                </Popconfirm>
-              ]}
-            >
-              {editingMemoryId === item.id ? (
-                <Input.TextArea 
-                  value={editingContent} 
-                  onChange={e => setEditingContent(e.target.value)} 
-                  autoSize={{ minRows: 2, maxRows: 6 }}
-                  style={{ background: '#0f172a', color: '#f8fafc' }}
-                />
-              ) : (
-                <div style={{ width: '100%' }}>
-                  <div style={{ whiteSpace: 'pre-wrap', color: '#e2e8f0', fontSize: '14px' }}>{item.content}</div>
-                  {item.created_at && (
-                    <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                      Added: {new Date(item.created_at).toLocaleString()}
-                    </span>
-                  )}
+                  <Card size="small" title="Add / Update Provider API Key" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                      <Select
+                        value={newProvider}
+                        onChange={setNewProvider}
+                        style={{ width: 160 }}
+                        options={[
+                          { value: 'openrouter', label: 'OpenRouter' },
+                          { value: 'openai', label: 'OpenAI' },
+                          { value: 'google', label: 'Google AI Studio' },
+                          { value: 'anthropic', label: 'Anthropic' },
+                        ]}
+                      />
+                      <Input
+                        placeholder="Label (optional, e.g. Primary Key)"
+                        value={newKeyLabel}
+                        onChange={e => setNewKeyLabel(e.target.value)}
+                        style={{ width: 220, background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
+                      />
+                    </div>
+                    <Input.Password
+                      placeholder="Paste API Key (sk-or-v1-... / sk-... / AIzaSy...)"
+                      value={newKeyValue}
+                      onChange={e => setNewKeyValue(e.target.value)}
+                      style={{ marginBottom: '12px', background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                      <Button
+                        icon={<ExperimentOutlined />}
+                        loading={isTestingKey}
+                        onClick={() => handleTestApiKey(newProvider, newKeyValue)}
+                      >
+                        Test Key
+                      </Button>
+                      <Button
+                        type="primary"
+                        icon={<SaveOutlined />}
+                        onClick={handleAddApiKey}
+                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
+                      >
+                        Save API Key
+                      </Button>
+                    </div>
+                  </Card>
+
+                  {/* Registered API Keys List */}
+                  <List
+                    size="small"
+                    dataSource={apiKeys}
+                    locale={{ emptyText: 'No custom API keys registered in SQLite. System is using .env fallbacks.' }}
+                    renderItem={k => (
+                      <List.Item
+                        style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', padding: '8px 12px' }}
+                        actions={[
+                          <Button size="small" icon={<ExperimentOutlined />} onClick={() => handleTestApiKey(k.provider)}>Test</Button>,
+                          <Popconfirm title="Delete this API Key?" onConfirm={() => handleDeleteApiKey(k.provider)}>
+                            <Button size="small" icon={<DeleteOutlined />} danger>Remove</Button>
+                          </Popconfirm>
+                        ]}
+                      >
+                        <div>
+                          <Tag color="cyan" style={{ fontWeight: 600 }}>{k.provider.toUpperCase()}</Tag>
+                          <span style={{ color: '#f8fafc', fontSize: '13px', marginRight: '8px' }}>{k.label}</span>
+                          <span style={{ color: '#64748b', fontSize: '12px', fontFamily: 'monospace' }}>({k.masked_value})</span>
+                        </div>
+                      </List.Item>
+                    )}
+                  />
                 </div>
-              )}
-            </List.Item>
-          )}
+              )
+            },
+            {
+              key: 'memories',
+              label: <span><BulbOutlined /> Memories & Persona</span>,
+              children: (
+                <div style={{ marginTop: '8px' }}>
+                  <Typography.Paragraph type="secondary" style={{ marginBottom: '16px', fontSize: '13px' }}>
+                    Global memories are retained across all chat sessions and injected into RAG context assembly. You can add custom global memories or edit/delete existing ones.
+                  </Typography.Paragraph>
+
+                  {/* Add Memory Form */}
+                  <Card 
+                    size="small" 
+                    title="Add New Global Memory" 
+                    style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: '20px' }}
+                  >
+                    <Input.TextArea
+                      rows={3}
+                      placeholder="e.g., Remember that I prefer dark mode, my API port is 8000, and I use Python 3.12."
+                      value={newMemoryContent}
+                      onChange={e => setNewMemoryContent(e.target.value)}
+                      style={{ marginBottom: '12px', background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <Button 
+                        type="primary" 
+                        icon={<PlusOutlined />} 
+                        onClick={handleAddMemory}
+                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
+                      >
+                        Save Memory
+                      </Button>
+                    </div>
+                  </Card>
+
+                  {/* Memory List */}
+                  <Typography.Text strong style={{ color: '#94a3b8', display: 'block', marginBottom: '8px' }}>
+                    Stored Memories ({memories.length})
+                  </Typography.Text>
+
+                  <List
+                    dataSource={memories}
+                    locale={{ emptyText: 'No stored memories found. Add one above or ask the agent to remember something!' }}
+                    renderItem={item => (
+                      <List.Item
+                        style={{ padding: '12px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
+                        actions={[
+                          editingMemoryId === item.id ? (
+                            <Button icon={<SaveOutlined />} type="link" onClick={() => handleUpdateMemory(item.id)}>Save</Button>
+                          ) : (
+                            <Button icon={<EditOutlined />} type="link" onClick={() => { setEditingMemoryId(item.id); setEditingContent(item.content); }}>Edit</Button>
+                          ),
+                          <Popconfirm title="Delete memory?" onConfirm={() => handleDeleteMemory(item.id)}>
+                            <Button icon={<DeleteOutlined />} type="link" danger>Delete</Button>
+                          </Popconfirm>
+                        ]}
+                      >
+                        {editingMemoryId === item.id ? (
+                          <Input.TextArea 
+                            value={editingContent} 
+                            onChange={e => setEditingContent(e.target.value)} 
+                            autoSize={{ minRows: 2, maxRows: 6 }}
+                            style={{ background: '#0f172a', color: '#f8fafc' }}
+                          />
+                        ) : (
+                          <div style={{ width: '100%' }}>
+                            <div style={{ whiteSpace: 'pre-wrap', color: '#e2e8f0', fontSize: '14px' }}>{item.content}</div>
+                            {item.created_at && (
+                              <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                                Added: {new Date(item.created_at).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </List.Item>
+                    )}
+                  />
+                </div>
+              )
+            }
+          ]}
         />
       </Modal>
 
@@ -681,6 +904,8 @@ export default function ChatPanel() {
               onClick={async () => {
                 setIsSettingsOpen(true);
                 await loadMemories();
+                await loadRoleModels();
+                await loadApiKeys();
               }}
             />
           </Tooltip>

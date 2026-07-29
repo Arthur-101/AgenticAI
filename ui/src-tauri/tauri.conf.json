@@ -12,9 +12,13 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-app",
+        "label": "main",
+        "title": "AgenticAI Studio",
         "width": 1200,
-        "height": 800
+        "height": 800,
+        "visible": true,
+        "focus": true,
+        "decorations": true
       }
     ],
     "security": {

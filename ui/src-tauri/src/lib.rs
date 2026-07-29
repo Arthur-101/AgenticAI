@@ -188,7 +188,7 @@ async fn stop_backend_internal(app_handle: &tauri::AppHandle) -> Result<String, 
     
     // Get the child process
     let child_opt = {
-    let mut process_guard = state.process.lock().await;
+        let mut process_guard = state.process.lock().await;
         process_guard.take()
     };
     
@@ -282,7 +282,6 @@ async fn backend_status(app_handle: tauri::AppHandle) -> Result<bool, String> {
     
     match send_json_rpc(&app_handle, "health", json!({}), None).await {
         Ok(result) => {
-            // Check if we got a valid health response
             let status = result.get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
@@ -382,6 +381,85 @@ async fn delete_memory(
         .ok_or_else(|| "No success flag in result".to_string())
 }
 
+#[tauri::command]
+async fn get_role_models(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let params = json!({});
+    let result = send_json_rpc(&app_handle, "get_role_models", params, None).await?;
+    result.get("role_models").cloned().ok_or_else(|| "Failed to get role models".to_string())
+}
+
+#[tauri::command]
+async fn update_role_model(
+    app_handle: tauri::AppHandle,
+    role: String,
+    model_id: String
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "role": role,
+        "model_id": model_id,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "update_role_model", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn get_api_keys(app_handle: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let params = json!({});
+    let result = send_json_rpc(&app_handle, "get_api_keys", params, None).await?;
+    result.get("api_keys")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .ok_or_else(|| "Failed to fetch API keys".to_string())
+}
+
+#[tauri::command]
+async fn add_api_key(
+    app_handle: tauri::AppHandle,
+    provider: String,
+    key_value: String,
+    label: Option<String>
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "provider": provider,
+        "key_value": key_value,
+        "label": label,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "add_api_key", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn delete_api_key(
+    app_handle: tauri::AppHandle,
+    provider: String
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "provider": provider,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "delete_api_key", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn test_api_key(
+    app_handle: tauri::AppHandle,
+    provider: String,
+    key_value: String,
+    model_id: Option<String>
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "provider": provider,
+        "key_value": key_value,
+        "model_id": model_id,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "test_api_key", params, None).await?;
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -392,84 +470,127 @@ pub fn run() {
             stdin: AsyncMutex::new(None),
             stdout: AsyncMutex::new(None),
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                let _ = window.hide();
-                api.prevent_close();
-            }
-            _ => {}
-        })
+        // Temporarily commented out for debugging invisible window issue
+        // .on_window_event(|window, event| match event {
+        //     tauri::WindowEvent::CloseRequested { api, .. } => {
+        //         let _ = window.hide();
+        //         api.prevent_close();
+        //     }
+        //     _ => {}
+        // })
         .setup(|app| {
-            let status_i = tauri::menu::MenuItem::with_id(app, "status", "🟢 AgenticAI (Engine Active)", false, None::<&str>)?;
-            let show_i = tauri::menu::MenuItem::with_id(app, "show", "🖥️  Show Studio Window", true, None::<&str>)?;
-            let new_chat_i = tauri::menu::MenuItem::with_id(app, "new_chat", "➕  Start New Chat", true, None::<&str>)?;
-            let toggle_i = tauri::menu::MenuItem::with_id(app, "toggle_engine", "⚡  Toggle AI Engine", true, None::<&str>)?;
-            let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "❌  Quit AgenticAI", true, None::<&str>)?;
-            
-            let sep1 = tauri::menu::PredefinedMenuItem::separator(app)?;
-            let sep2 = tauri::menu::PredefinedMenuItem::separator(app)?;
+            // Build tray icon — wrap entirely so any failure is non-fatal
+            // (tray errors must not prevent window creation)
+            let tray_result = (|| -> tauri::Result<()> {
+                let status_i = tauri::menu::MenuItem::with_id(app, "status", "🟢 AgenticAI (Engine Active)", false, None::<&str>)?;
+                let show_i = tauri::menu::MenuItem::with_id(app, "show", "🖥️  Show Studio Window", true, None::<&str>)?;
+                let new_chat_i = tauri::menu::MenuItem::with_id(app, "new_chat", "➕  Start New Chat", true, None::<&str>)?;
+                let toggle_i = tauri::menu::MenuItem::with_id(app, "toggle_engine", "⚡  Toggle AI Engine", true, None::<&str>)?;
+                let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "❌  Quit AgenticAI", true, None::<&str>)?;
 
-            let menu = tauri::menu::Menu::with_items(app, &[
-                &status_i,
-                &sep1,
-                &show_i,
-                &new_chat_i,
-                &toggle_i,
-                &sep2,
-                &quit_i,
-            ])?;
+                let sep1 = tauri::menu::PredefinedMenuItem::separator(app)?;
+                let sep2 = tauri::menu::PredefinedMenuItem::separator(app)?;
 
-            let _tray = tauri::tray::TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .tooltip("AgenticAI Studio - Multi-Model AI Ready")
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => {
-                        std::process::exit(0);
-                    }
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "new_chat" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            let _ = window.emit("trigger-new-chat", ());
-                        }
-                    }
-                    "toggle_engine" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.emit("trigger-toggle-engine", ());
-                        }
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..
-                    } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
+                let menu = tauri::menu::Menu::with_items(app, &[
+                    &status_i, &sep1, &show_i, &new_chat_i, &toggle_i, &sep2, &quit_i,
+                ])?;
+
+                let mut tray_builder = tauri::tray::TrayIconBuilder::new()
+                    .menu(&menu)
+                    .tooltip("AgenticAI Studio - Multi-Model AI Ready")
+                    .show_menu_on_left_click(false);
+
+                // Only set icon if one is available (avoids unwrap panic)
+                if let Some(icon) = app.default_window_icon() {
+                    tray_builder = tray_builder.icon(icon.clone());
+                }
+
+                tray_builder
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "quit" => { std::process::exit(0); }
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
                         }
+                        "new_chat" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                let _ = window.emit("trigger-new-chat", ());
+                            }
+                        }
+                        "toggle_engine" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.emit("trigger-toggle-engine", ());
+                            }
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..
+                        } = event {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    })
+                    .build(app)?;
+
+                Ok(())
+            })();
+
+            if let Err(e) = tray_result {
+                eprintln!("WARNING: Tray icon setup failed (non-fatal): {:?}", e);
+            }
+
+            // Spawn a task to show the window after a short delay
+            // Use raw Win32 API to force the window visible (fixes silent invisible window on some Windows setups)
+            let app_handle_for_show = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                if let Some(window) = app_handle_for_show.get_webview_window("main") {
+                    let _ = window.center();
+                    let _ = window.unminimize();
+                    let _ = window.set_skip_taskbar(false);
+                    let _ = window.set_always_on_top(true);
+                    let _ = window.show();
+                    let _ = window.set_focus();
+
+                    // Raw Win32 force-to-front as a fallback
+                    #[cfg(target_os = "windows")]
+                    {
+                        if let Ok(hwnd) = window.hwnd() {
+                            unsafe {
+                                windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
+                                    hwnd.0 as _,
+                                    windows_sys::Win32::UI::WindowsAndMessaging::SW_RESTORE,
+                                );
+                                windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(
+                                    hwnd.0 as _,
+                                );
+                            }
+                        }
                     }
-                })
-                .build(app)?;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                if let Some(window) = app_handle_for_show.get_webview_window("main") {
+                    let _ = window.set_always_on_top(false);
+                }
+            });
 
             Ok(())
         })
-        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             start_backend,
             stop_backend,
@@ -484,6 +605,12 @@ pub fn run() {
             update_memory,
             delete_memory,
             index_document,
+            get_role_models,
+            update_role_model,
+            get_api_keys,
+            add_api_key,
+            delete_api_key,
+            test_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -24,6 +24,9 @@ import sys
 import logging
 from typing import Dict, Any, List, Optional
 
+from src.memory.redis_store import redis_store
+from src.models.provider_router import ProviderRouter
+
 logger = logging.getLogger(__name__)
 
 # ── Agent capability cards (what each sub-agent is and what it can do) ──────────
@@ -88,6 +91,23 @@ class SubAgentManager:
 
     def __init__(self, openrouter_client):
         self.client = openrouter_client
+        self.provider_router = ProviderRouter(openrouter_client)
+
+    def _get_dynamic_model_for_role(self, role: str, default_model: str) -> str:
+        """Fetch role model override from Redis or SQLite if available."""
+        # 1. Try Redis
+        if redis_store.is_connected():
+            redis_model = redis_store.get_role_model(role)
+            if redis_model and redis_model.strip():
+                return redis_model.strip()
+        # 2. Try SQLite
+        try:
+            db_roles = self.provider_router.memory_store.get_role_assignments()
+            if role.lower() in db_roles and db_roles[role.lower()].strip():
+                return db_roles[role.lower()].strip()
+        except Exception:
+            pass
+        return default_model
 
     # ── Public API ───────────────────────────────────────────────────────────────
 
@@ -170,7 +190,8 @@ class SubAgentManager:
             "3. Do NOT write the implementation code yourself — the Coding Agent will do that.\n"
             "4. Keep your plan focused and actionable."
         )
-        return await self._call_agent("reasoning", card["model"], system, user_message, context)
+        model_id = self._get_dynamic_model_for_role("reasoning", card["model"])
+        return await self._call_agent("reasoning", model_id, system, user_message, context)
 
     async def _run_multimodal_agent(
         self,
@@ -186,7 +207,8 @@ class SubAgentManager:
             "Extract key visual, structural, and contextual details that will help the "
             "Reasoning and Coding agents understand what the user has shared."
         )
-        return await self._call_agent("multimodal", card["model"], system, user_message, context)
+        model_id = self._get_dynamic_model_for_role("multimodal", card["model"])
+        return await self._call_agent("multimodal", model_id, system, user_message, context)
 
     async def _run_coding_agent(
         self,
@@ -213,7 +235,8 @@ class SubAgentManager:
             "4. Do NOT re-explain the architecture — the Reasoning Agent already did that."
         )
         combined_message = f"{relay_context}\n\nOriginal user request:\n{user_message}"
-        return await self._call_agent("coding", card["model"], system, combined_message, context)
+        model_id = self._get_dynamic_model_for_role("coding", card["model"])
+        return await self._call_agent("coding", model_id, system, combined_message, context)
 
     async def _run_code_review(
         self,
@@ -223,7 +246,6 @@ class SubAgentManager:
         code_output: str,
     ) -> Optional[Dict[str, Any]]:
         """Reasoning Agent peer-reviews the Coding Agent's output."""
-        # Skip review if code output is too short / placeholder
         if len(code_output) < 200 or "[Worker failed" in code_output:
             return None
 
@@ -245,7 +267,8 @@ class SubAgentManager:
             f"My architectural plan:\n{reasoning_plan}\n\n"
             f"Coding Agent's implementation:\n{code_output}"
         )
-        result = await self._call_agent("reasoning_review", card["model"], system, review_message, [])
+        model_id = self._get_dynamic_model_for_role("reasoning", card["model"])
+        result = await self._call_agent("reasoning_review", model_id, system, review_message, [])
         return result
 
     # ── Core call helper ──────────────────────────────────────────────────────
@@ -267,7 +290,7 @@ class SubAgentManager:
 
         fallback_model = "qwen/qwen3.5-flash-02-23"
         try:
-            response = await self.client.generate(
+            response = await self.provider_router.generate(
                 messages=messages,
                 model_id=model_id,
                 temperature=0.2,
@@ -277,7 +300,7 @@ class SubAgentManager:
         except Exception as e:
             logger.error(f"Sub-agent [{role}|{model_id}] failed: {e}. Falling back to {fallback_model}.")
             try:
-                response = await self.client.generate(
+                response = await self.provider_router.generate(
                     messages=messages,
                     model_id=fallback_model,
                     temperature=0.2,

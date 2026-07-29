@@ -218,3 +218,16 @@ data/
   - Built `SubAgentManager`: Spawns parallel background workers (`deepseek/deepseek-v4-flash` for coding, `deepseek/deepseek-v4-pro` for reasoning/architecture, and `google/gemini-2.5-flash-lite` for multimodal attachments) using `asyncio.gather()`.
   - Built `ConsensusAggregator`: Synthesizes sub-agent outputs via `google/gemini-2.5-flash-lite` or `qwen/qwen3.5-flash-02-23` to eliminate duplicates, resolve conflicting suggestions, and output a unified master response.
   - Added **🤝 Multi-Model Team** option to the model selection dropdown in `ui/src/components/ChatPanel.tsx`.
+- **Model & API Configuration Manager (`src/models/provider_router.py`, `src/memory/sqlite_store.py`, `src/memory/redis_store.py`, `ui/src/components/ChatPanel.tsx`)**:
+  - Built `ProviderRouter`: Direct HTTP / SDK dispatching for OpenRouter, OpenAI, Google AI Studio, and Anthropic APIs.
+  - Multi-provider API Key storage in SQLite `api_keys` table with `.env` fallback. Added `test_api_key` verification endpoint.
+  - Dynamic Role Model Swapping: Update model assignment for any role (Orchestrator, Coding, Reasoning, Multimodal, Synthesizer) directly in Settings. Hot-reloaded into Redis (`set_role_model` / `get_role_model`) and takes effect from the very next prompt mid-session!
+  - Added **Key & Model Settings** tab to Settings modal with role assignment cards, API key form, and live key testing.
+  - Fixed `SQLiteMemoryStore` class method scope so `save_role_assignment`, `get_role_assignments`, `save_api_key`, `get_api_keys`, `get_api_key_by_provider`, and `delete_api_key` are properly located on `SQLiteMemoryStore` instead of `SessionManager`.
+  - Updated Google AI Studio test model target from deprecated `gemini-2.5-flash` to active `gemini-2.5-flash-lite` to resolve HTTP 404 test failures.
+
+## Planned Future Roadmap Tasks (Notion Tracked)
+- **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
+- **Task 2: Expanded Native MCP Tools**: Build `SystemMonitorTool` (CPU/RAM/Disk), `ProcessManagerTool` (active task management), and `GitInspectorTool` (git diffs/commits).
+- **Task 3: Autonomous Scheduled Background Workflows & Reminders**: One-shot & cron background scheduler for periodic health checks, repo backups, and AI reminders.
+- **Task 4: Voice Input & Speech-to-Text Dictation**: Mic button in input bar for hands-free prompt dictation.

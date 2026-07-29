@@ -153,6 +153,29 @@ class RedisMemoryStore:
     # -------------------------------------------------------------------------
     # Session State & Model Caching
     # -------------------------------------------------------------------------
+    def set_role_model(self, role: str, model_id: str):
+        """Set model assigned to a specific role in Redis for instant hot-reloading."""
+        if not self.is_connected():
+            return
+        try:
+            key = f"role:{role.lower()}"
+            self.client.set(key, model_id)
+            logger.info(f"Updated Redis role model: {role} -> {model_id}")
+        except Exception as e:
+            logger.error(f"Error setting role model in Redis: {e}")
+
+    def get_role_model(self, role: str) -> Optional[str]:
+        """Get model assigned to a specific role from Redis."""
+        if not self.is_connected():
+            return None
+        try:
+            key = f"role:{role.lower()}"
+            res = self.client.get(key)
+            return res if res else None
+        except Exception as e:
+            logger.error(f"Error getting role model from Redis: {e}")
+            return None
+
     def cache_session_state(self, session_id: str, state: Dict[str, Any], expire_seconds: int = 3600):
         """Cache active session state for quick access across processes."""
         if not self.is_connected():

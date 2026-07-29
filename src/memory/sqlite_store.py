@@ -129,6 +129,34 @@ class SQLiteMemoryStore:
         )
         """)
         
+        # Create api_keys table for storing multi-provider API keys
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id TEXT PRIMARY KEY,
+            provider TEXT NOT NULL UNIQUE,
+            label TEXT,
+            key_value TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        # Create role_assignments table for model role configuration
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS role_assignments (
+            role TEXT PRIMARY KEY,
+            provider TEXT NOT NULL DEFAULT 'openrouter',
+            model_id TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        
+        # Migration for existing database
+        try:
+            cursor.execute("ALTER TABLE role_assignments ADD COLUMN provider TEXT DEFAULT 'openrouter'")
+        except Exception:
+            pass  # Column already exists
+        
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
@@ -138,6 +166,7 @@ class SQLiteMemoryStore:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_tags ON messages(tags_json)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(provider)")
         
         self.connection.commit()
     
@@ -854,6 +883,76 @@ class SQLiteMemoryStore:
             self.connection.close()
             self.connection = None
     
+    # -----------------------------------------------------------------
+    # API Keys & Role Assignments CRUD
+    # -----------------------------------------------------------------
+    def save_api_key(self, provider: str, key_value: str, label: Optional[str] = None) -> str:
+        """Save or update an API key for a provider."""
+        key_id = str(uuid.uuid4())
+        label = label or f"{provider.title()} API Key"
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO api_keys (id, provider, label, key_value, is_active, added_at)
+            VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(provider) DO UPDATE SET
+                label = excluded.label,
+                key_value = excluded.key_value,
+                is_active = 1,
+                added_at = CURRENT_TIMESTAMP
+        """, (key_id, provider.lower(), label, key_value))
+        self.connection.commit()
+        return key_id
+
+    def get_api_keys(self) -> List[Dict[str, Any]]:
+        """Retrieve all registered API keys."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT id, provider, label, key_value, is_active, added_at FROM api_keys ORDER BY added_at DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def get_api_key_by_provider(self, provider: str) -> Optional[str]:
+        """Get active API key string for a specific provider."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT key_value FROM api_keys WHERE provider = ? AND is_active = 1", (provider.lower(),))
+        row = cursor.fetchone()
+        return row["key_value"] if row else None
+
+    def delete_api_key(self, provider: str) -> bool:
+        """Delete an API key by provider."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM api_keys WHERE provider = ?", (provider.lower(),))
+        self.connection.commit()
+        return cursor.rowcount > 0
+
+    def save_role_assignment(self, role: str, provider: str, model_id: str) -> bool:
+        """Save model & provider assignment for a specific role (e.g. reasoning, coding, orchestrator)."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO role_assignments (role, provider, model_id, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(role) DO UPDATE SET
+                provider = excluded.provider,
+                model_id = excluded.model_id,
+                updated_at = CURRENT_TIMESTAMP
+        """, (role.lower(), provider.lower(), model_id))
+        self.connection.commit()
+        # Sync with Redis if connected
+        if redis_store.is_connected():
+            redis_store.set_role_model(role.lower(), f"{provider.lower()}:{model_id}")
+        return True
+
+    def get_role_assignments(self) -> Dict[str, Dict[str, str]]:
+        """Retrieve dictionary of all assigned models & providers per role."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT role, provider, model_id FROM role_assignments")
+        rows = cursor.fetchall()
+        res = {}
+        for row in rows:
+            keys = row.keys() if hasattr(row, 'keys') else []
+            prov = row["provider"] if "provider" in keys and row["provider"] else "openrouter"
+            res[row["role"]] = {"provider": prov, "model_id": row["model_id"]}
+        return res
+
     def __enter__(self):
         return self
     

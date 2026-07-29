@@ -74,6 +74,20 @@ class EmbeddedBackend:
                 return self._handle_delete_memory(params)
             elif method == "index_document":
                 return self._handle_index_document(params)
+            elif method == "get_available_models":
+                return await self._handle_get_available_models(params)
+            elif method == "get_role_models":
+                return self._handle_get_role_models()
+            elif method == "update_role_model":
+                return self._handle_update_role_model(params)
+            elif method == "get_api_keys":
+                return self._handle_get_api_keys()
+            elif method == "add_api_key":
+                return self._handle_add_api_key(params)
+            elif method == "delete_api_key":
+                return self._handle_delete_api_key(params)
+            elif method == "test_api_key":
+                return await self._handle_test_api_key(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -285,6 +299,149 @@ class EmbeddedBackend:
                 "error": {"code": -32603, "message": str(e)},
                 "id": params.get("request_id")
             }
+
+    async def _handle_get_available_models(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Fetch available models with cost information for a provider."""
+        provider = params.get("provider", "openrouter")
+        from src.models.provider_router import ProviderRouter
+        pr = ProviderRouter(memory_store=self.memory)
+        models = await pr.fetch_provider_models(provider)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"models": models, "provider": provider},
+            "id": params.get("request_id")
+        }
+
+    def _handle_get_role_models(self) -> Dict[str, Any]:
+        """Fetch active provider & model assignment for all roles."""
+        db_roles = self.memory.get_role_assignments()
+        defaults = {
+            "orchestrator": {"provider": "openrouter", "model_id": "qwen/qwen3.5-flash-02-23"},
+            "coding": {"provider": "openrouter", "model_id": "deepseek/deepseek-v4-flash"},
+            "reasoning": {"provider": "openrouter", "model_id": "deepseek/deepseek-v4-pro"},
+            "multimodal": {"provider": "openrouter", "model_id": "google/gemini-2.5-flash-lite"},
+            "synthesizer": {"provider": "openrouter", "model_id": "google/gemini-2.5-flash-lite"}
+        }
+        from src.memory.redis_store import redis_store
+        for role in defaults:
+            if redis_store.is_connected():
+                redis_str = redis_store.get_role_model(role)
+                if redis_str and redis_str.strip():
+                    parts = redis_str.strip().split(":", 1)
+                    if len(parts) == 2:
+                        defaults[role] = {"provider": parts[0], "model_id": parts[1]}
+                    else:
+                        defaults[role]["model_id"] = parts[0]
+                    continue
+            if role in db_roles:
+                defaults[role] = db_roles[role]
+                
+        return {
+            "jsonrpc": "2.0",
+            "result": {"role_models": defaults},
+            "id": None
+        }
+
+    def _handle_update_role_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update model assignment for a role and update Redis + SQLite."""
+        role = params.get("role", "").lower().strip()
+        provider = params.get("provider", "openrouter").lower().strip()
+        model_id = params.get("model_id", "").strip()
+        if not role or not model_id:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32602, "message": "Role, provider, and model_id are required"},
+                "id": params.get("request_id")
+            }
+        success = self.memory.save_role_assignment(role, provider, model_id)
+        from src.memory.redis_store import redis_store
+        if redis_store.is_connected():
+            redis_store.set_role_model(role, f"{provider}:{model_id}")
+            
+        print(f"INFO: Model assigned to role [{role}] -> [{provider}] {model_id}", file=sys.stderr, flush=True)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": success, "role": role, "provider": provider, "model_id": model_id},
+            "id": params.get("request_id")
+        }
+
+    def _handle_get_api_keys(self) -> Dict[str, Any]:
+        """Get list of registered provider API keys."""
+        keys = self.memory.get_api_keys()
+        # Obfuscate values for privacy
+        safe_keys = []
+        for k in keys:
+            val = k.get("key_value", "")
+            masked = f"{val[:6]}...{val[-4:]}" if len(val) > 10 else "••••••••"
+            safe_keys.append({
+                "id": k.get("id"),
+                "provider": k.get("provider"),
+                "label": k.get("label"),
+                "masked_value": masked,
+                "is_active": k.get("is_active"),
+                "added_at": k.get("added_at")
+            })
+        return {
+            "jsonrpc": "2.0",
+            "result": {"api_keys": safe_keys},
+            "id": None
+        }
+
+    def _handle_add_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add or update an API key for a provider."""
+        provider = params.get("provider", "").strip().lower()
+        key_value = params.get("key_value", "").strip()
+        label = params.get("label")
+        if not provider or not key_value:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32602, "message": "Provider and key_value are required"},
+                "id": params.get("request_id")
+            }
+        key_id = self.memory.save_api_key(provider, key_value, label)
+        print(f"INFO: Saved API Key for provider [{provider}]", file=sys.stderr, flush=True)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": True, "key_id": key_id, "provider": provider},
+            "id": params.get("request_id")
+        }
+
+    def _handle_delete_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Delete an API key for a provider."""
+        provider = params.get("provider", "").strip().lower()
+        success = self.memory.delete_api_key(provider)
+        print(f"INFO: Deleted API Key for provider [{provider}]", file=sys.stderr, flush=True)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": success, "provider": provider},
+            "id": params.get("request_id")
+        }
+
+    async def _handle_test_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Test API key for a provider."""
+        provider = params.get("provider", "").strip().lower()
+        key_value = params.get("key_value", "").strip()
+        model_id = params.get("model_id")
+        
+        # If no key_value provided, look up from DB
+        if not key_value:
+            key_value = self.memory.get_api_key_by_provider(provider) or ""
+            
+        if not provider or not key_value:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32602, "message": "Provider and key_value are required"},
+                "id": params.get("request_id")
+            }
+            
+        from src.models.provider_router import ProviderRouter
+        router = ProviderRouter(self.router.client, self.memory)
+        res = await router.test_provider_key(provider, key_value, model_id)
+        return {
+            "jsonrpc": "2.0",
+            "result": res,
+            "id": params.get("request_id")
+        }
 
 async def main_async():
     """Async main entry point."""
