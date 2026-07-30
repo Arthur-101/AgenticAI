@@ -1,4 +1,4 @@
-import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip, Card, Tabs, Tag } from 'antd';
+import { Layout, List, Input, Button, message as antdMessage, Modal, Popconfirm, Typography, Upload, Select, Collapse, Tooltip, Card, Tabs, Tag, Table } from 'antd';
 import { open } from '@tauri-apps/plugin-dialog';
 import { 
   DeleteOutlined, 
@@ -21,7 +21,11 @@ import {
   FileTextOutlined,
   BulbOutlined,
   KeyOutlined,
-  ExperimentOutlined
+  ExperimentOutlined,
+  StarOutlined,
+  StarFilled,
+  SearchOutlined,
+  TableOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
@@ -63,18 +67,52 @@ export default function ChatPanel() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Role Models & API Keys State
-  const [roleModels, setRoleModels] = useState<Record<string, string>>({
-    orchestrator: 'qwen/qwen3.5-flash-02-23',
-    coding: 'deepseek/deepseek-v4-flash',
-    reasoning: 'deepseek/deepseek-v4-pro',
-    multimodal: 'google/gemini-2.5-flash-lite',
-    synthesizer: 'google/gemini-2.5-flash-lite'
+  interface RoleConfig {
+    provider: string;
+    model_id: string;
+  }
+  const [roleModels, setRoleModels] = useState<Record<string, RoleConfig>>({
+    orchestrator: { provider: 'openrouter', model_id: 'qwen/qwen3.5-flash-02-23' },
+    coding: { provider: 'openrouter', model_id: 'deepseek/deepseek-v4-flash' },
+    reasoning: { provider: 'openrouter', model_id: 'deepseek/deepseek-v4-pro' },
+    multimodal: { provider: 'openrouter', model_id: 'google/gemini-2.5-flash-lite' },
+    synthesizer: { provider: 'openrouter', model_id: 'google/gemini-2.5-flash-lite' },
+    summary: { provider: 'openrouter', model_id: 'openai/gpt-oss-120b' },
+    stt: { provider: 'groq', model_id: 'whisper-large-v3' },
+    tts: { provider: 'google', model_id: 'gemini-2.5-flash-tts' }
   });
+  const [providerCatalog, setProviderCatalog] = useState<Record<string, Array<{id: string; name: string; cost_label: string; is_active: boolean}>>>({});
   const [apiKeys, setApiKeys] = useState<Array<{id: string; provider: string; label: string; masked_value: string; is_active: number}>>([]);
   const [newProvider, setNewProvider] = useState<string>('openrouter');
   const [newKeyValue, setNewKeyValue] = useState<string>('');
   const [newKeyLabel, setNewKeyLabel] = useState<string>('');
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
+
+  // Model Tracker & Notes State
+  const [trackerData, setTrackerData] = useState<Array<{
+    model_id: string;
+    name: string;
+    provider: string;
+    cost_label: string;
+    is_active: boolean;
+    is_favorite: boolean;
+    notes: string;
+    call_count: number;
+    last_used: string | null;
+  }>>([]);
+  const [trackerSearch, setTrackerSearch] = useState<string>('');
+  const [isLoadingTracker, setIsLoadingTracker] = useState<boolean>(false);
+
+  const loadProviderModels = async (provider: string) => {
+    try {
+      const res: any = await invoke('get_available_models', { provider });
+      if (Array.isArray(res)) {
+        setProviderCatalog(prev => ({ ...prev, [provider]: res }));
+      }
+    } catch (err) {
+      console.error(`Failed to fetch models for ${provider}:`, err);
+    }
+  };
 
   const loadRoleModels = async () => {
     try {
@@ -85,13 +123,39 @@ export default function ChatPanel() {
     } catch (err) {
       console.error('Failed to load role models:', err);
     }
+    // Pre-fetch catalogs for all supported providers
+    ['openrouter', 'google', 'openai', 'anthropic', 'groq', 'mistral'].forEach(p => loadProviderModels(p));
   };
 
-  const handleUpdateRoleModel = async (role: string, modelId: string) => {
+  const loadTrackerData = async () => {
+    setIsLoadingTracker(true);
     try {
-      await invoke('update_role_model', { role, modelId });
-      setRoleModels(prev => ({ ...prev, [role]: modelId }));
-      antdMessage.success(`Model for [${role}] updated to ${modelId} (hot-reloaded in Redis!)`);
+      const res: any = await invoke('get_model_tracker_data');
+      if (res?.models && Array.isArray(res.models)) {
+        setTrackerData(res.models);
+      }
+    } catch (err) {
+      console.error('Failed to load tracker data:', err);
+    } finally {
+      setIsLoadingTracker(false);
+    }
+  };
+
+  const handleSaveModelNote = async (modelId: string, provider: string, isFavorite: boolean, notes: string) => {
+    try {
+      await invoke('save_model_note', { modelId, provider, isFavorite, notes });
+      setTrackerData(prev => prev.map(m => m.model_id === modelId ? { ...m, is_favorite: isFavorite, notes } : m));
+      message.success('Model note updated!');
+    } catch (err) {
+      message.error(`Failed to save model note: ${err}`);
+    }
+  };
+
+  const handleUpdateRoleModel = async (role: string, provider: string, modelId: string) => {
+    try {
+      await invoke('update_role_model', { role, provider, modelId });
+      setRoleModels(prev => ({ ...prev, [role]: { provider, model_id: modelId } }));
+      antdMessage.success(`Model for [${role}] updated to [${provider.toUpperCase()}] ${modelId} (Hot-reloaded!)`);
     } catch (err) {
       antdMessage.error(`Failed to update role model: ${err}`);
     }
@@ -517,7 +581,10 @@ export default function ChatPanel() {
 
   useEffect(() => {
     if (isSettingsOpen) {
+      loadRoleModels();
+      loadApiKeys();
       loadMemories();
+      loadTrackerData();
     }
   }, [isSettingsOpen]);
 
@@ -601,20 +668,120 @@ export default function ChatPanel() {
                       { role: 'reasoning', label: '💡 Reasoning Sub-Agent', desc: 'Architecture, logic & edge-case specialist' },
                       { role: 'multimodal', label: '👁️ Multimodal Specialist', desc: 'Image, media & document analyzer' },
                       { role: 'synthesizer', label: '🧩 Consensus Synthesizer', desc: 'Merges multi-model team outputs' },
-                    ].map(r => (
-                      <Card key={r.role} size="small" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
-                        <div style={{ fontWeight: 600, color: '#f8fafc', marginBottom: '4px', fontSize: '13px' }}>{r.label}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>{r.desc}</div>
-                        <Input
-                          value={roleModels[r.role] || ''}
-                          placeholder="e.g. deepseek/deepseek-v4-flash"
-                          onChange={e => setRoleModels(prev => ({ ...prev, [r.role]: e.target.value }))}
-                          onBlur={e => handleUpdateRoleModel(r.role, e.target.value)}
-                          onPressEnter={e => handleUpdateRoleModel(r.role, (e.target as HTMLInputElement).value)}
-                          style={{ background: '#0f172a', color: '#38bdf8', borderColor: '#334155', fontSize: '12px' }}
-                        />
-                      </Card>
-                    ))}
+                      { role: 'summary', label: '🧠 Background Summarizer & Memory', desc: 'Context compression & fact extraction' },
+                      { role: 'stt', label: '🎙️ Speech-to-Text (STT) Dictation', desc: 'Audio transcription model dropdown' },
+                      { role: 'tts', label: '🔊 Text-to-Speech (TTS) Voice', desc: 'Speech synthesis model dropdown' },
+                    ].map(r => {
+                      const roleConfig = roleModels[r.role] || { provider: 'openrouter', model_id: '' };
+                      const currentProvider = roleConfig.provider || 'openrouter';
+                      
+                      // Sanitize model ID prefix if stored as "provider:model_id" or "provider/model_id"
+                      let cleanModelId = roleConfig.model_id || '';
+                      if (cleanModelId.includes(':')) {
+                        cleanModelId = cleanModelId.split(':')[1];
+                      } else if (cleanModelId.includes('/') && !cleanModelId.startsWith('openrouter/')) {
+                        cleanModelId = cleanModelId.split('/')[1];
+                      }
+
+                      let catalogForProvider = providerCatalog[currentProvider] || [];
+
+                      // Apply role-specific filtering for STT and TTS models
+                      if (r.role === 'stt') {
+                        const sttFiltered = catalogForProvider.filter(m => 
+                          m.id.toLowerCase().includes('whisper') ||
+                          m.id.toLowerCase().includes('stt') ||
+                          m.id.toLowerCase().includes('audio') ||
+                          m.id.toLowerCase().includes('transcribe') ||
+                          m.name.toLowerCase().includes('speech-to-text') ||
+                          m.name.toLowerCase().includes('stt')
+                        );
+                        if (sttFiltered.length > 0) {
+                          catalogForProvider = sttFiltered;
+                        }
+                      } else if (r.role === 'tts') {
+                        const ttsFiltered = catalogForProvider.filter(m => 
+                          m.id.toLowerCase().includes('tts') ||
+                          m.id.toLowerCase().includes('voice') ||
+                          m.id.toLowerCase().includes('speech') ||
+                          m.name.toLowerCase().includes('text-to-speech') ||
+                          m.name.toLowerCase().includes('tts')
+                        );
+                        if (ttsFiltered.length > 0) {
+                          catalogForProvider = ttsFiltered;
+                        }
+                      }
+
+                      let selectOptions = catalogForProvider.map(m => ({
+                        value: m.id,
+                        disabled: !m.is_active,
+                        label: `${m.name} (${m.cost_label})`,
+                      }));
+
+                      // If currently assigned model ID is not present in options (e.g. while catalog is loading), inject fallback option
+                      if (cleanModelId && !selectOptions.some(o => o.value === cleanModelId)) {
+                        selectOptions.unshift({
+                          value: cleanModelId,
+                          disabled: false,
+                          label: `${cleanModelId} (Active Assignment)`
+                        });
+                      }
+
+                      return (
+                        <Card key={r.role} size="small" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+                          <div style={{ fontWeight: 600, color: '#f8fafc', marginBottom: '2px', fontSize: '13px' }}>{r.label}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>{r.desc}</div>
+                          
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <Select
+                              size="small"
+                              value={currentProvider}
+                              onChange={(newProv) => {
+                                loadProviderModels(newProv);
+                                const catalog = providerCatalog[newProv] || [];
+                                const firstActive = catalog.find(m => m.is_active)?.id || roleConfig.model_id;
+                                handleUpdateRoleModel(r.role, newProv, firstActive);
+                              }}
+                              style={{ width: '100%' }}
+                              options={[
+                                { value: 'openrouter', label: '🌐 OpenRouter' },
+                                { value: 'google', label: '🟢 Google AI Studio' },
+                                { value: 'openai', label: '🤖 OpenAI' },
+                                { value: 'anthropic', label: '🧠 Anthropic' },
+                                { value: 'groq', label: '🚀 Groq' },
+                                { value: 'mistral', label: '🇪🇺 Mistral AI' },
+                              ]}
+                            />
+
+                            <Select
+                              size="small"
+                              showSearch
+                              value={cleanModelId || undefined}
+                              placeholder="Select model..."
+                              onChange={(newModelId) => handleUpdateRoleModel(r.role, currentProvider, newModelId)}
+                              style={{ width: '100%' }}
+                              filterOption={(input, option) =>
+                                ((option?.label as string) || '').toLowerCase().includes(input.toLowerCase()) ||
+                                ((option?.value as string) || '').toLowerCase().includes(input.toLowerCase())
+                              }
+                              options={selectOptions}
+                              optionRender={(option) => {
+                                const m = catalogForProvider.find(item => item.id === option.value);
+                                return (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', opacity: (m ? m.is_active : true) ? 1 : 0.45 }}>
+                                    <span style={{ fontSize: '12px', color: (m ? m.is_active : true) ? '#f8fafc' : '#64748b', fontWeight: 500 }}>
+                                      {m?.name || option.value}
+                                    </span>
+                                    <Tag color={(m ? m.is_active : true) ? 'cyan' : 'default'} style={{ fontSize: '10px', margin: 0 }}>
+                                      {m?.cost_label || 'Active'}
+                                    </Tag>
+                                  </div>
+                                );
+                              }}
+                            />
+                          </div>
+                        </Card>
+                      );
+                    })}
                   </div>
 
                   {/* API Key Management */}
@@ -633,6 +800,8 @@ export default function ChatPanel() {
                           { value: 'openai', label: 'OpenAI' },
                           { value: 'google', label: 'Google AI Studio' },
                           { value: 'anthropic', label: 'Anthropic' },
+                          { value: 'groq', label: 'Groq (Ultra Fast)' },
+                          { value: 'mistral', label: 'Mistral AI' },
                         ]}
                       />
                       <Input
@@ -643,7 +812,7 @@ export default function ChatPanel() {
                       />
                     </div>
                     <Input.Password
-                      placeholder="Paste API Key (sk-or-v1-... / sk-... / AIzaSy...)"
+                      placeholder="Paste API Key (gsk_... / mk-... / sk-or-v1-...)"
                       value={newKeyValue}
                       onChange={e => setNewKeyValue(e.target.value)}
                       style={{ marginBottom: '12px', background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
@@ -768,6 +937,118 @@ export default function ChatPanel() {
                         )}
                       </List.Item>
                     )}
+                  />
+                </div>
+              )
+            },
+            {
+              key: 'tracker',
+              label: <span><TableOutlined /> Model Catalog & Tracker</span>,
+              children: (
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
+                      Keep track of recently used models, mark favorites, and add custom notes for each model (persisted in SQLite).
+                    </Typography.Paragraph>
+                    <Input
+                      placeholder="Search models..."
+                      prefix={<SearchOutlined />}
+                      value={trackerSearch}
+                      onChange={e => setTrackerSearch(e.target.value)}
+                      style={{ width: 220, background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
+                    />
+                  </div>
+
+                  <Table
+                    size="small"
+                    loading={isLoadingTracker}
+                    dataSource={trackerData
+                      .filter(m => 
+                        m.name.toLowerCase().includes(trackerSearch.toLowerCase()) ||
+                        m.model_id.toLowerCase().includes(trackerSearch.toLowerCase()) ||
+                        m.provider.toLowerCase().includes(trackerSearch.toLowerCase()) ||
+                        m.notes.toLowerCase().includes(trackerSearch.toLowerCase())
+                      )
+                      .sort((a, b) => (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0))
+                    }
+                    rowKey="model_id"
+                    pagination={{ pageSize: 8, size: 'small' }}
+                    columns={[
+                      {
+                        title: '⭐',
+                        dataIndex: 'is_favorite',
+                        key: 'is_favorite',
+                        width: 45,
+                        render: (isFav, record) => (
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={isFav ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined style={{ color: '#64748b' }} />}
+                            onClick={() => handleSaveModelNote(record.model_id, record.provider, !isFav, record.notes)}
+                          />
+                        )
+                      },
+                      {
+                        title: 'Model',
+                        dataIndex: 'name',
+                        key: 'name',
+                        render: (name, record) => (
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '12px' }}>{name}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>{record.model_id}</div>
+                          </div>
+                        )
+                      },
+                      {
+                        title: 'Provider',
+                        dataIndex: 'provider',
+                        key: 'provider',
+                        width: 110,
+                        render: (prov) => (
+                          <Tag color="cyan" style={{ fontSize: '10px', textTransform: 'uppercase' }}>{prov}</Tag>
+                        )
+                      },
+                      {
+                        title: 'Pricing',
+                        dataIndex: 'cost_label',
+                        key: 'cost_label',
+                        width: 140,
+                        render: (cost) => (
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>{cost}</span>
+                        )
+                      },
+                      {
+                        title: 'Usage',
+                        dataIndex: 'call_count',
+                        key: 'call_count',
+                        width: 90,
+                        render: (count) => (
+                          <Tag color={count > 0 ? 'blue' : 'default'} style={{ fontSize: '11px' }}>
+                            {count} calls
+                          </Tag>
+                        )
+                      },
+                      {
+                        title: '📝 User Notes',
+                        dataIndex: 'notes',
+                        key: 'notes',
+                        render: (notes, record) => (
+                          <Input.TextArea
+                            rows={1}
+                            size="small"
+                            placeholder="Add note..."
+                            defaultValue={notes}
+                            onBlur={(e) => {
+                              const val = e.target.value;
+                              if (val !== record.notes) {
+                                handleSaveModelNote(record.model_id, record.provider, record.is_favorite, val);
+                              }
+                            }}
+                            style={{ background: '#0f172a', color: '#f8fafc', borderColor: '#334155', fontSize: '11px', resize: 'vertical' }}
+                          />
+                        )
+                      }
+                    ]}
                   />
                 </div>
               )

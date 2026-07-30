@@ -151,11 +151,27 @@ class SQLiteMemoryStore:
         )
         """)
         
+        # Create model_notes table for favorite models and user notes
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS model_notes (
+            model_id TEXT PRIMARY KEY,
+            provider TEXT NOT NULL DEFAULT 'openrouter',
+            is_favorite INTEGER DEFAULT 0,
+            notes TEXT DEFAULT '',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        
         # Migration for existing database
         try:
             cursor.execute("ALTER TABLE role_assignments ADD COLUMN provider TEXT DEFAULT 'openrouter'")
         except Exception:
             pass  # Column already exists
+            
+        try:
+            cursor.execute("ALTER TABLE model_notes ADD COLUMN provider TEXT DEFAULT 'openrouter'")
+        except Exception:
+            pass
         
         # Create indexes for performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id)")
@@ -952,6 +968,56 @@ class SQLiteMemoryStore:
             prov = row["provider"] if "provider" in keys and row["provider"] else "openrouter"
             res[row["role"]] = {"provider": prov, "model_id": row["model_id"]}
         return res
+
+    def save_model_note(self, model_id: str, provider: str, is_favorite: int, notes: str) -> bool:
+        """Save or update user note / favorite status for a model."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+        INSERT INTO model_notes (model_id, provider, is_favorite, notes, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(model_id) DO UPDATE SET
+            provider = excluded.provider,
+            is_favorite = excluded.is_favorite,
+            notes = excluded.notes,
+            updated_at = CURRENT_TIMESTAMP
+        """, (model_id, provider.lower(), 1 if is_favorite else 0, notes))
+        self.connection.commit()
+        return True
+
+    def get_model_notes(self) -> Dict[str, Dict[str, Any]]:
+        """Fetch all model notes & favorite states as a dictionary keyed by model_id."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT model_id, provider, is_favorite, notes, updated_at FROM model_notes")
+        rows = cursor.fetchall()
+        res = {}
+        for row in rows:
+            res[row["model_id"]] = {
+                "model_id": row["model_id"],
+                "provider": row["provider"],
+                "is_favorite": bool(row["is_favorite"]),
+                "notes": row["notes"] or "",
+                "updated_at": row["updated_at"]
+            }
+        return res
+
+    def get_model_usage_stats(self) -> Dict[str, Dict[str, Any]]:
+        """Get total call counts and last used timestamp for all models."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+        SELECT model_id, COUNT(*) as call_count, MAX(created_at) as last_used
+        FROM messages
+        WHERE model_id IS NOT NULL AND model_id != ''
+        GROUP BY model_id
+        """)
+        rows = cursor.fetchall()
+        stats = {}
+        for row in rows:
+            m_id = row["model_id"]
+            stats[m_id] = {
+                "call_count": row["call_count"],
+                "last_used": row["last_used"]
+            }
+        return stats
 
     def __enter__(self):
         return self

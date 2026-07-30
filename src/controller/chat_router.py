@@ -41,8 +41,10 @@ class ChatRouter:
         self.current_session_id = self.session_manager.current_session_id
     
     def initialize_client(self):
-        """Initialize OpenRouter client."""
+        """Initialize OpenRouter client and ProviderRouter."""
+        from src.models.provider_router import ProviderRouter
         self.client = OpenRouterClient()
+        self.provider_router = ProviderRouter(self.client, self.memory_store)
     
     async def chat(
         self,
@@ -155,7 +157,7 @@ class ChatRouter:
             "tokens_used": assistant_response.get("tokens_used", 0),
             "tags": tags,
         }
-    
+
     async def _assemble_context(
         self,
         session_id: str,
@@ -365,48 +367,78 @@ class ChatRouter:
         user_message: str,
         context: ChatContext,
         model_override: Optional[str] = None,
-    ) -> ModelType:
+    ) -> Any:
         """Select appropriate model based on message and context."""
-        if model_override:
-            # Map override to ModelType
-            override_map = {
-                "qwen": ModelType.QWEN,
-                "gemini-flash": ModelType.GEMINI_FLASH,
-                "mimo": ModelType.MIMO,
-                "deepseek": ModelType.DEEPSEEK,
-            }
-            return override_map.get(model_override.lower(), ModelType.GEMINI_FLASH)
-        
-        # Use default chat model from config
-        default_model = config.settings.default_chat_model
-        model_map = {
-            "google/gemini-2.5-flash-lite": ModelType.GEMINI_FLASH,
-            "gemini-2.5-flash-lite": ModelType.GEMINI_FLASH,
-            "qwen/qwen-2.5-32b-instruct": ModelType.QWEN,
-            "qwen-2.5-32b-instruct": ModelType.QWEN,
-            "qwen/qwen3.5-flash-02-23": ModelType.QWEN,
-            "qwen3.5-flash-02-23": ModelType.QWEN,
-            "xiaomi/mimo-v2.5-pro": ModelType.MIMO,
-            "mimo-v2.5-pro": ModelType.MIMO,
-            "deepseek/deepseek-v4-flash": ModelType.DEEPSEEK,
-            "deepseek/deepseek-v4-pro": ModelType.DEEPSEEK,
-        }
-        
-        return model_map.get(default_model, ModelType.QWEN)
+        # 1. Explicit model override
+        if model_override and model_override not in ["auto", "collaborative", "team", "multi_model"]:
+            return model_override
+
+        # 2. Redis Orchestrator Role Assignment
+        if redis_store.is_connected():
+            redis_model = redis_store.get_role_model("orchestrator")
+            if redis_model and redis_model.strip():
+                return redis_model.strip()
+
+        # 3. SQLite Orchestrator Role Assignment
+        try:
+            db_roles = self.memory_store.get_role_assignments()
+            if "orchestrator" in db_roles:
+                item = db_roles["orchestrator"]
+                if isinstance(item, dict):
+                    prov = item.get("provider", "openrouter")
+                    mid = item.get("model_id", "")
+                    if mid:
+                        return f"{prov}:{mid}"
+                elif isinstance(item, str) and item.strip():
+                    return item.strip()
+        except Exception:
+            pass
+
+        # 4. Fallback default chat model
+        return config.settings.default_chat_model
     
     async def _get_assistant_response(
         self,
         context: ChatContext,
-        model_type: ModelType,
+        model_type: Any,
         session_id: str,
     ) -> Dict[str, Any]:
-        """Get assistant response from OpenRouter, handling tool calls autonomously."""
+        """Get assistant response handling tools and direct provider execution."""
         messages = context.assembled_messages.copy()
         tools_schema = self.tool_manager.get_openai_tools_schema()
         
-        max_iterations = 25     # To prevent infinite loops in case of tool call issues, we set a max iteration limit. Each iteration represents one assistant response + tool execution cycle.
+        target_model = str(model_type).strip()
+        prov_prefix = "openrouter"
+        if ":" in target_model:
+            prov_prefix = target_model.split(":", 1)[0].lower().strip()
+        elif target_model.startswith("google/"):
+            prov_prefix = "google"
+        elif target_model.startswith("openai/"):
+            prov_prefix = "openai"
+        elif target_model.startswith("anthropic/"):
+            prov_prefix = "anthropic"
+
+        if hasattr(self, "provider_router") and self.provider_router and prov_prefix in ["google", "gemini", "openai", "anthropic", "claude"]:
+            key = self.provider_router.get_api_key_for_provider(prov_prefix)
+            if key:
+                # Direct provider execution via ProviderRouter
+                dict_messages = [{"role": m.role, "content": m.content} for m in messages]
+                res_dict = await self.provider_router.generate(dict_messages, target_model)
+                content = res_dict.get("content", "") if isinstance(res_dict, dict) else str(res_dict)
+                tokens = res_dict.get("tokens_used", 0) if isinstance(res_dict, dict) else 0
+                final_model = res_dict.get("model_id", target_model) if isinstance(res_dict, dict) else target_model
+                return {"content": content, "model_id": final_model, "tokens_used": tokens}
+            else:
+                prov_disp = "Google AI Studio" if prov_prefix in ["google", "gemini"] else prov_prefix.capitalize()
+                return {
+                    "content": f"⚠️ No {prov_disp} API Key registered. Please add your {prov_disp} API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use {prov_disp} directly.",
+                    "model_id": target_model,
+                    "tokens_used": 0
+                }
+
+        max_iterations = 25
         total_tokens = 0
-        final_model_id = ""
+        final_model_id = str(model_type)
         
         for iteration in range(max_iterations):
             try:
@@ -420,11 +452,10 @@ class ChatRouter:
                 if response.usage:
                     total_tokens += response.usage.total_tokens
                 
-                final_model_id = response.model if hasattr(response, 'model') and response.model else (
-                    config.settings.model_qwen if model_type == ModelType.QWEN else 
-                    config.settings.model_gemini_flash if model_type == ModelType.GEMINI_FLASH else 
-                    "unknown_model"
-                )
+                if hasattr(response, 'model') and response.model:
+                    final_model_id = response.model
+                elif isinstance(model_type, str):
+                    final_model_id = model_type
                 
                 if response.error:
                     error_msg = response.error.get("message", "Unknown API error")
@@ -583,10 +614,30 @@ class ChatRouter:
             "tokens_used": total_tokens,
         }
     
+    def _get_assigned_model_for_role(self, role: str, default_model: str) -> str:
+        """Resolve assigned provider:model for a specific role from Redis or SQLite."""
+        if redis_store.is_connected():
+            redis_m = redis_store.get_role_model(role)
+            if redis_m and redis_m.strip():
+                return redis_m.strip()
+        try:
+            db_roles = self.memory_store.get_role_assignments()
+            if role in db_roles:
+                item = db_roles[role]
+                if isinstance(item, dict):
+                    prov = item.get("provider", "openrouter")
+                    mid = item.get("model_id", "")
+                    if mid:
+                        return f"{prov}:{mid}"
+                elif isinstance(item, str) and item.strip():
+                    return item.strip()
+        except Exception:
+            pass
+        return default_model
+
     async def _summarize_messages(self, user_msg_id: str, assistant_msg_id: str):
         """Summarize messages asynchronously."""
         try:
-            # Get messages
             cursor = self.memory_store.connection.cursor()
             cursor.execute(
                 "SELECT content_raw FROM messages WHERE id IN (?, ?)",
@@ -598,17 +649,15 @@ class ChatRouter:
                 user_content = rows[0]["content_raw"]
                 assistant_content = rows[1]["content_raw"]
                 
-                # Combine for summarization
                 combined = f"User: {user_content}\nAssistant: {assistant_content}"
+                summary_model = self._get_assigned_model_for_role("summary", "openai/gpt-oss-120b")
                 
-                # Summarize
                 summary = await self.client.summarize_content(
                     content=combined,
                     max_tokens=config.settings.summary_max_tokens,
-                    model_id="openai/gpt-oss-120b",
+                    model_id=summary_model,
                 )
                 
-                # Update both messages with same summary (or split as needed)
                 self.memory_store.update_message_summary(user_msg_id, summary)
                 self.memory_store.update_message_summary(assistant_msg_id, summary)
                 
@@ -618,12 +667,13 @@ class ChatRouter:
     async def _extract_and_save_facts(self, user_message: str, tags: List[str]):
         """Extract factual memories, consolidate with existing memories, and auto-update."""
         try:
-            facts = await self.client.extract_memory_facts(user_message)
+            summary_model = self._get_assigned_model_for_role("summary", "openai/gpt-oss-120b")
+            facts = await self.client.extract_memory_facts(user_message, model_id=summary_model)
             if not facts:
                 return
 
             existing_memories = self.memory_store.get_all_user_memories()
-            actions = await self.client.consolidate_memory_actions(existing_memories, facts)
+            actions = await self.client.consolidate_memory_actions(existing_memories, facts, model_id=summary_model)
 
             for item in actions:
                 act = item.get("action")

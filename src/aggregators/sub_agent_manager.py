@@ -99,12 +99,27 @@ class SubAgentManager:
         if redis_store.is_connected():
             redis_model = redis_store.get_role_model(role)
             if redis_model and redis_model.strip():
-                return redis_model.strip()
+                val = redis_model.strip()
+                if ":" in val:
+                    prov, mid = val.split(":", 1)
+                    if prov in ["google", "openai", "anthropic"] and not mid.startswith(f"{prov}/"):
+                        return f"{prov}/{mid}"
+                    return mid
+                return val
         # 2. Try SQLite
         try:
             db_roles = self.provider_router.memory_store.get_role_assignments()
-            if role.lower() in db_roles and db_roles[role.lower()].strip():
-                return db_roles[role.lower()].strip()
+            if role.lower() in db_roles:
+                item = db_roles[role.lower()]
+                if isinstance(item, dict):
+                    prov = item.get("provider", "openrouter")
+                    mid = item.get("model_id", "")
+                    if mid:
+                        if prov in ["google", "openai", "anthropic"] and not mid.startswith(f"{prov}/"):
+                            return f"{prov}/{mid}"
+                        return mid
+                elif isinstance(item, str) and item.strip():
+                    return item.strip()
         except Exception:
             pass
         return default_model

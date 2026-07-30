@@ -151,23 +151,51 @@ class OpenRouterClient:
     async def chat_completion(
         self,
         messages: List[Message],
-        model_type: ModelType,
+        model_type: Any,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stream: bool = False,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
         """Send chat completion request to OpenRouter."""
-        model_id = self.model_ids[model_type]
-        
+        if isinstance(model_type, ModelType):
+            model_id = self.model_ids[model_type]
+        else:
+            raw_str = str(model_type).strip()
+            if ":" in raw_str:
+                prov, mid = raw_str.split(":", 1)
+                prov_lower = prov.lower().strip()
+                if prov_lower in ["google", "gemini"]:
+                    model_id = f"google/{mid}"
+                elif prov_lower in ["deepseek"]:
+                    model_id = f"deepseek/{mid}"
+                elif prov_lower in ["qwen"]:
+                    model_id = f"qwen/{mid}"
+                elif prov_lower in ["anthropic", "claude"]:
+                    model_id = f"anthropic/{mid}"
+                elif prov_lower in ["openai"]:
+                    model_id = f"openai/{mid}"
+                else:
+                    model_id = mid
+            else:
+                model_id = raw_str.replace("openrouter/", "")
+                
+            model_lower = model_id.lower()
+            if "gemini" in model_lower and not model_lower.startswith("google/"):
+                model_id = f"google/{model_id}"
+            elif "deepseek" in model_lower and not model_lower.startswith("deepseek/"):
+                model_id = f"deepseek/{model_id}"
+            elif "qwen" in model_lower and not model_lower.startswith("qwen/"):
+                model_id = f"qwen/{model_id}"
+            elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
+                model_id = f"anthropic/{model_id}"
+            
         # Use defaults if not provided
         if temperature is None:
             temperature = config.settings.temperature
         if max_tokens is None:
-            max_tokens = min(
-                config.settings.max_tokens_per_request,
-                self.model_capabilities[model_type].max_tokens
-            )
+            caps = self.model_capabilities.get(model_type) if isinstance(model_type, ModelType) else None
+            max_tokens = min(config.settings.max_tokens_per_request, caps.max_tokens if caps else 128000)
             
         provider = None
         if "deepseek" in model_id.lower():
@@ -352,41 +380,15 @@ class OpenRouterClient:
                 Message(role="user", content=f"Summarize the following content concisely:\n\n{content}"),
             ]
             
-            # Use a custom request since gpt-oss-120b isn't in our model mapping
-            request = ChatRequest(
-                model=model_id,
-                messages=messages,
-                temperature=0.2,  # Low temperature for consistent summarization
-                max_tokens=max_tokens,
-                stream=False,
-            )
-            
-            response = await self.client.post(
-                f"{self.base_url}/chat/completions",
-                json=request.dict(exclude_none=True),
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            # Track cost (free model but still track)
-            if "usage" in data:
-                usage = data["usage"]
-                input_tokens = usage.get("prompt_tokens", 0)
-                output_tokens = usage.get("completion_tokens", 0)
-                config.track_cost(model_id, input_tokens, output_tokens)
-            
-            # Extract summary from response
-            if "choices" in data and data["choices"]:
-                choice = data["choices"][0]
-                if "message" in choice and "content" in choice["message"]:
-                    return choice["message"]["content"].strip()
-            
-            return ""
+            from src.models.provider_router import ProviderRouter
+            pr = ProviderRouter(self)
+            dict_msgs = [{"role": m.role, "content": m.content} for m in messages]
+            res = await pr.generate(dict_msgs, model_id=model_id, temperature=0.2, max_tokens=max_tokens)
+            summary = res.get("content", "").strip() if isinstance(res, dict) else ""
+            return summary if summary else self._fallback_summary(content, max_tokens)
             
         except Exception as e:
             print(f"Error in summarization: {e}")
-            # Fallback to simple truncation
             return self._fallback_summary(content, max_tokens)
     
     def _fallback_summary(self, content: str, max_tokens: int) -> str:
@@ -395,8 +397,7 @@ class OpenRouterClient:
         if tokens <= max_tokens:
             return content
         
-        # Simple truncation
-        target_chars = max_tokens * 4  # Approximate 4 chars per token
+        target_chars = max_tokens * 4
         if len(content) > target_chars:
             return content[:target_chars] + "..."
         return content
@@ -426,40 +427,24 @@ class OpenRouterClient:
                 Message(role="user", content=f"Text to evaluate:\n\n{content}"),
             ]
             
-            request = ChatRequest(
-                model=model_id,
-                messages=messages,
-                temperature=0.1,
-                max_tokens=300,
-                stream=False,
-            )
+            from src.models.provider_router import ProviderRouter
+            pr = ProviderRouter(self)
+            dict_msgs = [{"role": m.role, "content": m.content} for m in messages]
+            res = await pr.generate(dict_msgs, model_id=model_id, temperature=0.1, max_tokens=300)
+            content_result = res.get("content", "").strip() if isinstance(res, dict) else ""
             
-            response = await self.client.post(
-                f"{self.base_url}/chat/completions",
-                json=request.dict(exclude_none=True),
-            )
-            response.raise_for_status()
+            if not content_result or content_result == "NO_FACTS" or "NO_FACTS" in content_result:
+                return []
             
-            data = response.json()
+            facts = []
+            for line in content_result.split("\n"):
+                line = line.strip()
+                if line.startswith("-") or line.startswith("*"):
+                    facts.append(line.lstrip("-* "))
+                elif line and not line.lower().startswith("here"):
+                    facts.append(line)
+            return facts
             
-            if "choices" in data and data["choices"]:
-                choice = data["choices"][0]
-                if "message" in choice and "content" in choice["message"]:
-                    content_result = choice["message"]["content"].strip()
-                    if content_result == "NO_FACTS" or "NO_FACTS" in content_result:
-                        return []
-                    
-                    # Split bullet points
-                    facts = []
-                    for line in content_result.split("\n"):
-                        line = line.strip()
-                        if line.startswith("-") or line.startswith("*"):
-                            facts.append(line.lstrip("-* "))
-                        elif line and not line.lower().startswith("here"):
-                            facts.append(line)
-                    return facts
-            
-            return []
         except Exception as e:
             print(f"Error extracting memory facts: {e}")
             return []
@@ -497,32 +482,19 @@ class OpenRouterClient:
                 Message(role="user", content=f"EXISTING_MEMORIES:\n{memories_formatted}\n\nNEW_FACTS:\n{facts_formatted}"),
             ]
             
-            request = ChatRequest(
-                model=model_id,
-                messages=messages,
-                temperature=0.1,
-                max_tokens=500,
-                stream=False,
-            )
-            
-            response = await self.client.post(
-                f"{self.base_url}/chat/completions",
-                json=request.dict(exclude_none=True),
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            if "choices" in data and data["choices"]:
-                choice = data["choices"][0]
-                if "message" in choice and "content" in choice["message"]:
-                    raw_json = choice["message"]["content"].strip()
-                    # Clean markdown fence if present
-                    if "```" in raw_json:
-                        raw_json = raw_json.split("```")[1]
-                        if raw_json.startswith("json"):
-                            raw_json = raw_json[4:]
-                    raw_json = raw_json.strip()
-                    return json.loads(raw_json)
+            from src.models.provider_router import ProviderRouter
+            pr = ProviderRouter(self)
+            dict_msgs = [{"role": m.role, "content": m.content} for m in messages]
+            res = await pr.generate(dict_msgs, model_id=model_id, temperature=0.1, max_tokens=500)
+            raw_json = res.get("content", "").strip() if isinstance(res, dict) else ""
+
+            if raw_json:
+                if "```" in raw_json:
+                    raw_json = raw_json.split("```")[1]
+                    if raw_json.startswith("json"):
+                        raw_json = raw_json[4:]
+                raw_json = raw_json.strip()
+                return json.loads(raw_json)
         except Exception as e:
             print(f"Memory consolidation fallback: {e}")
             

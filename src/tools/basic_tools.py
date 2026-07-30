@@ -616,6 +616,7 @@ class BasicTools:
                     },
                     "file_paths": {
                         "type": "array",
+                        "items": {"type": "string"},
                         "description": "List of file paths the expert model should analyze",
                         "required": False,
                     }
@@ -734,10 +735,16 @@ class ToolManager:
             }
             
             for param_name, param_def in tool_def.get("parameters", {}).items():
-                parameters["properties"][param_name] = {
+                param_prop = {
                     "type": param_def.get("type", "string"),
                     "description": param_def.get("description", "")
                 }
+                if param_def.get("items"):
+                    param_prop["items"] = param_def["items"]
+                elif param_def.get("type") == "array":
+                    param_prop["items"] = {"type": "string"}
+
+                parameters["properties"][param_name] = param_prop
                 if param_def.get("required", False):
                     parameters["required"].append(param_name)
                     

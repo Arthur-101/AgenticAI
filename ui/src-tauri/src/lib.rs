@@ -382,6 +382,13 @@ async fn delete_memory(
 }
 
 #[tauri::command]
+async fn get_available_models(app_handle: tauri::AppHandle, provider: String) -> Result<serde_json::Value, String> {
+    let params = json!({ "provider": provider });
+    let result = send_json_rpc(&app_handle, "get_available_models", params, None).await?;
+    result.get("models").cloned().ok_or_else(|| "Failed to get available models".to_string())
+}
+
+#[tauri::command]
 async fn get_role_models(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let params = json!({});
     let result = send_json_rpc(&app_handle, "get_role_models", params, None).await?;
@@ -392,10 +399,12 @@ async fn get_role_models(app_handle: tauri::AppHandle) -> Result<serde_json::Val
 async fn update_role_model(
     app_handle: tauri::AppHandle,
     role: String,
+    provider: String,
     model_id: String
 ) -> Result<serde_json::Value, String> {
     let params = json!({
         "role": role,
+        "provider": provider,
         "model_id": model_id,
         "request_id": Uuid::new_v4().to_string()
     });
@@ -460,6 +469,36 @@ async fn test_api_key(
     Ok(result)
 }
 
+#[tauri::command]
+async fn get_model_tracker_data(
+    app_handle: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "get_model_tracker_data", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn save_model_note(
+    app_handle: tauri::AppHandle,
+    modelId: String,
+    provider: String,
+    isFavorite: bool,
+    notes: String
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "model_id": modelId,
+        "provider": provider,
+        "is_favorite": if isFavorite { 1 } else { 0 },
+        "notes": notes,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "save_model_note", params, None).await?;
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -470,17 +509,7 @@ pub fn run() {
             stdin: AsyncMutex::new(None),
             stdout: AsyncMutex::new(None),
         })
-        // Temporarily commented out for debugging invisible window issue
-        // .on_window_event(|window, event| match event {
-        //     tauri::WindowEvent::CloseRequested { api, .. } => {
-        //         let _ = window.hide();
-        //         api.prevent_close();
-        //     }
-        //     _ => {}
-        // })
         .setup(|app| {
-            // Build tray icon — wrap entirely so any failure is non-fatal
-            // (tray errors must not prevent window creation)
             let tray_result = (|| -> tauri::Result<()> {
                 let status_i = tauri::menu::MenuItem::with_id(app, "status", "🟢 AgenticAI (Engine Active)", false, None::<&str>)?;
                 let show_i = tauri::menu::MenuItem::with_id(app, "show", "🖥️  Show Studio Window", true, None::<&str>)?;
@@ -500,7 +529,6 @@ pub fn run() {
                     .tooltip("AgenticAI Studio - Multi-Model AI Ready")
                     .show_menu_on_left_click(false);
 
-                // Only set icon if one is available (avoids unwrap panic)
                 if let Some(icon) = app.default_window_icon() {
                     tray_builder = tray_builder.icon(icon.clone());
                 }
@@ -554,8 +582,6 @@ pub fn run() {
                 eprintln!("WARNING: Tray icon setup failed (non-fatal): {:?}", e);
             }
 
-            // Spawn a task to show the window after a short delay
-            // Use raw Win32 API to force the window visible (fixes silent invisible window on some Windows setups)
             let app_handle_for_show = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
@@ -567,7 +593,6 @@ pub fn run() {
                     let _ = window.show();
                     let _ = window.set_focus();
 
-                    // Raw Win32 force-to-front as a fallback
                     #[cfg(target_os = "windows")]
                     {
                         if let Ok(hwnd) = window.hwnd() {
@@ -605,12 +630,15 @@ pub fn run() {
             update_memory,
             delete_memory,
             index_document,
+            get_available_models,
             get_role_models,
             update_role_model,
             get_api_keys,
             add_api_key,
             delete_api_key,
             test_api_key,
+            get_model_tracker_data,
+            save_model_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

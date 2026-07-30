@@ -88,6 +88,10 @@ class EmbeddedBackend:
                 return self._handle_delete_api_key(params)
             elif method == "test_api_key":
                 return await self._handle_test_api_key(params)
+            elif method == "get_model_tracker_data":
+                return await self._handle_get_model_tracker_data()
+            elif method == "save_model_note":
+                return self._handle_save_model_note(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -442,6 +446,76 @@ class EmbeddedBackend:
             "result": res,
             "id": params.get("request_id")
         }
+
+    async def _handle_get_model_tracker_data(self) -> Dict[str, Any]:
+        """Fetch combined catalog, usage stats, and notes for Model Tracker & Favorites."""
+        from src.models.provider_router import ProviderRouter
+        pr = ProviderRouter(memory_store=self.memory)
+        
+        providers = ["openrouter", "google", "openai", "anthropic", "groq", "mistral"]
+        all_models = []
+        
+        for prov in providers:
+            try:
+                cat = await pr.fetch_provider_models(prov)
+                for m in cat:
+                    m["provider"] = prov
+                    all_models.append(m)
+            except Exception:
+                pass
+                
+        user_notes = self.memory.get_model_notes()
+        usage_stats = self.memory.get_model_usage_stats()
+        
+        tracker_items = []
+        seen_ids = set()
+        
+        for m in all_models:
+            mid = m["id"]
+            if mid in seen_ids:
+                continue
+            seen_ids.add(mid)
+            
+            note_info = user_notes.get(mid, {})
+            u_info = usage_stats.get(mid, {})
+            
+            tracker_items.append({
+                "model_id": mid,
+                "name": m.get("name", mid),
+                "provider": m.get("provider", "openrouter"),
+                "cost_label": m.get("cost_label", "Standard"),
+                "is_active": m.get("is_active", True),
+                "is_favorite": note_info.get("is_favorite", False),
+                "notes": note_info.get("notes", ""),
+                "call_count": u_info.get("call_count", 0),
+                "last_used": u_info.get("last_used", None)
+            })
+            
+        tracker_items.sort(key=lambda x: (not x["is_favorite"], -x["call_count"]))
+
+        return {
+            "jsonrpc": "2.0",
+            "result": {"models": tracker_items},
+            "id": None
+        }
+
+    def _handle_save_model_note(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Save user note and favorite status for a model."""
+        model_id = params.get("model_id", "").strip()
+        provider = params.get("provider", "openrouter").strip()
+        is_favorite = int(params.get("is_favorite", 0))
+        notes = params.get("notes", "").strip()
+        
+        if not model_id:
+            return {"jsonrpc": "2.0", "error": {"code": -32602, "message": "model_id is required"}}
+            
+        success = self.memory.save_model_note(model_id, provider, is_favorite, notes)
+        return {
+            "jsonrpc": "2.0",
+            "result": {"success": success, "model_id": model_id, "is_favorite": bool(is_favorite), "notes": notes},
+            "id": params.get("request_id")
+        }
+
 
 async def main_async():
     """Async main entry point."""

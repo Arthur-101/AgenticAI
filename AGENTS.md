@@ -224,7 +224,31 @@ data/
   - Dynamic Role Model Swapping: Update model assignment for any role (Orchestrator, Coding, Reasoning, Multimodal, Synthesizer) directly in Settings. Hot-reloaded into Redis (`set_role_model` / `get_role_model`) and takes effect from the very next prompt mid-session!
   - Added **Key & Model Settings** tab to Settings modal with role assignment cards, API key form, and live key testing.
   - Fixed `SQLiteMemoryStore` class method scope so `save_role_assignment`, `get_role_assignments`, `save_api_key`, `get_api_keys`, `get_api_key_by_provider`, and `delete_api_key` are properly located on `SQLiteMemoryStore` instead of `SessionManager`.
-  - Updated Google AI Studio test model target from deprecated `gemini-2.5-flash` to active `gemini-2.5-flash-lite` to resolve HTTP 404 test failures.
+  - Updated Google AI Studio test model target from deprecated `gemini-2.5-flash` to active `gemini-2.0-flash` to resolve HTTP 404 test failures.
+  - Multi-Provider Heterogeneous Model Selection & Live Cost Badges: Users can pick a distinct provider (OpenRouter, Google AI Studio, OpenAI, Anthropic) per role card (*Orchestrator, Coding, Reasoning, Multimodal, Synthesizer*). Model dropdowns feature live token cost badges (e.g. `$0.10/1M in, $0.40/1M out`) and automatically grey out (`disabled: true`) deprecated/unsupported models.
+  - Zero-Quota API Key Verification: Replaced generation test prompts in `test_provider_key` with lightweight model catalog metadata checks (`/v1beta/models` for Google, `/v1/models` for OpenAI). Eliminates `429 RESOURCE_EXHAUSTED` / token quota errors entirely when verifying keys.
+  - Dynamic Orchestrator Resolution: Updated `ChatRouter._select_model` and `_get_assistant_response` to dynamically query Redis (`redis_store.get_role_model("orchestrator")`) and SQLite (`role_assignments`) on every turn so Orchestrator model swaps (e.g. to `qwen3.7-flash`) take effect instantly in chat bubbles.
+  - Expanded Google AI Studio Catalog & Fixed Direct API Dispatching: Expanded Google AI Studio model catalog to all 13 active Gemini models (`gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3.1-pro`, `gemini-3-flash`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-flash`, `gemini-1.5-pro`). Routed all main chat responses via `ProviderRouter` so Google AI Studio models execute directly on Google's API (`generativelanguage.googleapis.com`) using `GEMINI_API_KEY`, resolving OpenRouter HTTP `400 Bad Request` errors.
+  - Gemini Tool Schema Fix (`items` field validation): Fixed `basic_tools.py` array parameter schemas (`file_paths`) and `ToolManager.get_openai_tools_schema()` by guaranteeing `items: {"type": "string"}` is set on all array parameters, resolving Google Gemini API's strict JSON Schema `GenerateContentRequest.tools[0]...file_paths.items: missing field` error.
+  - Strict Provider Routing & Key Check Enforcement: Preserved `provider:model` tuple formatting across Redis (`redis_store`), SQLite (`role_assignments`), and `ChatRouter._select_model` so `ProviderRouter.generate` routes directly to native provider REST APIs (Google AI Studio, OpenAI, Anthropic). If a direct provider is selected without an API key registered, the system prompts the user to add their key in Settings instead of silently falling back to OpenRouter.
+  - Eliminated Duplicate Chat Router Methods & Colon Delimiter Parsing: Removed duplicate legacy `_get_assistant_response` method in `chat_router.py` that was shadowing `ProviderRouter`. Enhanced `openrouter_client.py` to automatically parse `provider:model_id` formatted strings and convert colon delimiters to valid OpenRouter slashes (`google/gemini-3.5-flash-lite`), eliminating OpenRouter `400 Bad Request: google:gemini-3.5-flash-lite is not a valid model ID` errors.
+  - Background Summarizer & Memory Role Configuration: Added 6th Role Card (**🧠 Background Summarizer & Memory**) in `ChatPanel.tsx` and connected `_summarize_messages`, `extract_memory_facts`, and `consolidate_memory_actions` to route background tasks dynamically through `ProviderRouter`. Users can now configure background summarization and memory extraction to use Google AI Studio (`gemini-2.5-flash-lite`), OpenRouter (`openai/gpt-oss-120b`), OpenAI, or Anthropic.
+  - Groq & Mistral AI Provider Support: Implemented direct HTTP REST API dispatching, key verification (`test_provider_key`), and live model catalog retrieval for Groq (`https://api.groq.com/openai/v1`) and Mistral AI (`https://api.mistral.ai/v1`).
+  - STT & TTS Role Cards: Added 7th & 8th Role Cards (**🎙️ Speech-to-Text Dictation** & **🔊 Text-to-Speech Voice**) to the Settings modal for configuring transcription and speech synthesis models.
+  - Model Catalog & Tracker Tab with SQLite Notes: Created Tab 3 (**📊 Model Catalog & Tracker**) in Settings UI rendering an interactive searchable `<Table>` with ⭐ Favorite model toggles, provider badges, pricing tags, call usage counts, and an inline editable 📝 **Notes** field persisted in SQLite `model_notes` table.
+  - Groq Cloudflare HTTP 403 Fix: Added browser `User-Agent` header to all Groq and Mistral HTTP requests in `provider_router.py`, resolving Cloudflare error 1010 during key verification and catalog fetching.
+  - Favorite Models Top Sorting: Updated `_handle_get_model_tracker_data` in `embedded_backend.py` and `dataSource` sorting in `ChatPanel.tsx` so ⭐ Favorite models always render at the very top of the Model Catalog & Tracker table.
+  - Role Assignment Selection Persistence: Sanitized stored model IDs (`cleanModelId`) and injected fallback options in `ChatPanel.tsx` so background summarizer, STT, TTS, and orchestrator selections persist cleanly without de-selecting when opening Settings.
+  - Dedicated STT/TTS Dropdown Filtering: Applied strict keyword filtering to STT and TTS role cards in `ChatPanel.tsx` to display only audio transcription (`whisper`, `stt`, `transcribe`) and speech synthesis (`tts`, `voice`) models.
+
+
+
+
+
+
+
+
+
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
