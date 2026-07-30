@@ -339,26 +339,56 @@ class BasicTools:
                 "message": f"Error fetching webpage: {e}",
             }
     
-    def ask_expert_model(self, model_name: str, prompt: str, file_paths: Optional[list] = None) -> Dict[str, Any]:
-        """Ask an expert AI model a specific question or delegate a task."""
+    def ask_expert_model(self, role: str = "", prompt: str = "", file_paths: Optional[list] = None, model_name: Optional[str] = None) -> Dict[str, Any]:
+        """Delegate a task to a specialized role sub-agent."""
         try:
             from src.utils.config import config
             import httpx
             import json
             import base64
+            from pathlib import Path
+            from src.processors.file_processor import FileProcessor
+            from src.models.provider_router import ProviderRouter
+            from src.memory.redis_store import redis_store
+            from src.utils.prompt_loader import PromptLoader
+
+            target_role = (role or model_name or "reasoning").strip().lower()
             
-            # Dynamically map friendly names back to actual model IDs based on config
-            mapping = {}
-            for model_id in config.settings.model_capabilities.keys():
-                if "qwen" in model_id: continue
-                friendly_name = model_id.split("/")[-1].replace(".", "").replace("-", "_")
-                if "mimo" in model_id: friendly_name = "mimo_pro"
-                elif "gemini" in model_id and "flash" in model_id: friendly_name = "gemini_flash"
-                elif "gemini" in model_id and "pro" in model_id: friendly_name = "gemini_pro"
-                mapping[friendly_name] = model_id
-                
-            actual_model = mapping.get(model_name.lower(), model_name)
-            
+            # Map friendly aliases to standardized role keys
+            role_key = "reasoning"
+            if "code" in target_role or "coding" in target_role:
+                role_key = "coding"
+            elif "multi" in target_role or "vision" in target_role or "gemini" in target_role or "media" in target_role:
+                role_key = "multimodal"
+            elif "synth" in target_role:
+                role_key = "synthesizer"
+            elif "sum" in target_role or "mem" in target_role:
+                role_key = "summary"
+            elif "stt" in target_role or "audio" in target_role:
+                role_key = "stt"
+            elif "tts" in target_role or "voice" in target_role:
+                role_key = "tts"
+            elif "logic" in target_role or "reason" in target_role or "arch" in target_role:
+                role_key = "reasoning"
+
+            pr = ProviderRouter()
+            assigned_model = ""
+            if redis_store.is_connected():
+                assigned_model = redis_store.get_role_model(role_key)
+            if not assigned_model:
+                try:
+                    db_roles = pr.memory_store.get_role_assignments()
+                    if role_key in db_roles:
+                        item = db_roles[role_key]
+                        if isinstance(item, dict):
+                            assigned_model = f"{item.get('provider', 'openrouter')}:{item.get('model_id', '')}"
+                        elif isinstance(item, str):
+                            assigned_model = item
+                except Exception:
+                    pass
+
+            target_model = assigned_model.strip() if assigned_model and assigned_model.strip() else "openrouter:qwen/qwen3.5-flash-02-23"
+
             # Prepare context from files if provided
             content_list: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
             
@@ -369,9 +399,7 @@ class BasicTools:
                         p = Path(path_str)
                         if p.exists() and p.is_file():
                             mime_type, _ = mimetypes.guess_type(str(p))
-                            
                             if mime_type and (mime_type.startswith('image/') or mime_type.startswith('video/') or mime_type.startswith('audio/')):
-                                # Handle media files (max 50MB to prevent memory crash)
                                 if p.stat().st_size < 50 * 1024 * 1024:
                                     with open(p, "rb") as media_file:
                                         encoded_string = base64.b64encode(media_file.read()).decode('utf-8')
@@ -381,10 +409,7 @@ class BasicTools:
                                                 "url": f"data:{mime_type};base64,{encoded_string}"
                                             }
                                         })
-                                else:
-                                    content_list[0]["text"] += f"\n\n[SYSTEM NOTE: The media file {p.name} is too large (>50MB) to process via base64.]\n"
-                            elif p.stat().st_size < 1024 * 1024:  # 1MB limit for text
-                                # Handle text
+                            elif p.stat().st_size < 1024 * 1024:
                                 try:
                                     content = FileProcessor.process_file(str(p))
                                     content_list[0]["text"] += f"\n\n--- Contents of {p.name} ---\n{content}\n"
@@ -392,52 +417,49 @@ class BasicTools:
                                     content_list[0]["text"] += f"\n\n[SYSTEM NOTE: Could not process {path_str}: {str(e)}]\n"
                     except Exception as e:
                         content_list[0]["text"] += f"\n\n(Error reading {path_str}: {str(e)})\n"
-            
+
+            # Load role system prompt from cached prompt files
+            prompt_name = f"{role_key}_prompt"
+            system_instruction = PromptLoader.get_prompt(prompt_name, f"You are the {role_key.upper()} sub-agent. Provide clear, direct, and concise output.")
+
             messages = [
-                {"role": "system", "content": "You are an expert sub-agent called by the primary orchestrator. Provide direct, concise answers with zero conversational filler. Your output will be parsed directly by another AI."},
+                {"role": "system", "content": system_instruction},
                 {"role": "user", "content": content_list if len(content_list) > 1 else content_list[0]["text"]}
             ]
-            
-            request_data = {
-                "model": actual_model,
-                "messages": messages,
-                "temperature": 0.2,
-                "max_tokens": 4000
-            }
-            
-            print(f"🤖 Supervisor delegating task to {actual_model}... (this may take a minute)")
-            
-            with httpx.Client(timeout=300.0) as client:
-                response = client.post(
-                    f"{config.settings.openrouter_base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {config.settings.openrouter_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=request_data
-                )
-                response.raise_for_status()
-                data = response.json()
-                
-                # Track cost
-                if data.get("usage"):
-                    usage = data["usage"]
-                    input_tokens = usage.get("prompt_tokens", 0)
-                    output_tokens = usage.get("completion_tokens", 0)
-                    config.track_cost(actual_model, input_tokens, output_tokens)
-                
-                if "choices" in data and data["choices"]:
-                    content = data["choices"][0].get("message", {}).get("content", "")
-                    return {
-                        "success": True,
-                        "result": content,
-                        "message": f"Expert {model_name} responded successfully"
-                    }
-                    
+
+            print(f"🤖 Supervisor delegating task to role [{role_key.upper()}] using model ({target_model})...")
+
+            import concurrent.futures
+            import asyncio
+
+            def _run_async_generate():
+                return asyncio.run(pr.generate(messages=messages, model_id=target_model, temperature=0.2, max_tokens=4000))
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(_run_async_generate)
+                    res = future.result()
+            else:
+                res = _run_async_generate()
+
+            if res.get("success", True) and res.get("content"):
+                return {
+                    "success": True,
+                    "result": res["content"],
+                    "role": role_key,
+                    "model": target_model,
+                    "message": f"Role [{role_key.upper()}] ({target_model}) responded successfully"
+                }
+
             return {
                 "success": False,
-                "result": None,
-                "message": "No response generated by expert model"
+                "result": res.get("content", ""),
+                "message": res.get("error", f"No response generated by role {role_key}")
             }
             
         except Exception as e:
@@ -602,26 +624,26 @@ class BasicTools:
                 "returns": "Extracted text content of the webpage",
             },
             "ask_expert_model": {
-                "description": expert_desc,
+                "description": "Delegate a sub-task or analysis to a specialized role sub-agent.",
                 "parameters": {
-                    "model_name": {
+                    "role": {
                         "type": "string",
-                        "description": f"Name of the expert model (options: {', '.join(expert_options)})",
+                        "description": "Specialized sub-agent role ('coding', 'reasoning', 'multimodal', 'synthesizer', 'summary', 'stt', 'tts')",
                         "required": True,
                     },
                     "prompt": {
                         "type": "string",
-                        "description": "Detailed instructions for the expert model",
+                        "description": "Detailed instructions for the expert sub-agent",
                         "required": True,
                     },
                     "file_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of file paths the expert model should analyze",
+                        "description": "List of file paths the sub-agent should analyze",
                         "required": False,
                     }
                 },
-                "returns": "Response from the expert model",
+                "returns": "Response from the expert sub-agent",
             },
         }
         

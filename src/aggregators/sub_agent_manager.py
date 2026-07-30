@@ -29,29 +29,30 @@ from src.models.provider_router import ProviderRouter
 
 logger = logging.getLogger(__name__)
 
+from src.utils.prompt_loader import PromptLoader
+
 # ── Agent capability cards (what each sub-agent is and what it can do) ──────────
 AGENT_CARDS = {
     "reasoning": {
         "name": "💡 Reasoning & Architecture Agent",
-        "model": "deepseek/deepseek-v4-pro",
+        "role": "reasoning",
         "description": (
             "Expert in step-by-step logical decomposition, system architecture, "
             "design patterns, security analysis, and edge-case identification. "
-            "Produces structured architectural plans and reviewes code for correctness."
+            "Produces structured architectural plans and reviews code for correctness."
         ),
     },
     "coding": {
         "name": "🤖 Coding & Execution Agent",
-        "model": "deepseek/deepseek-v4-flash",
+        "role": "coding",
         "description": (
-            "Expert in writing production-ready, well-typed, fully-functional Python "
-            "(and other languages) code with proper error handling, type annotations, "
-            "docstrings, and unit-test stubs."
+            "Expert in writing production-ready, well-typed, fully-functional code "
+            "with proper error handling, type annotations, docstrings, and unit-test stubs."
         ),
     },
     "multimodal": {
         "name": "👁️ Multimodal & Vision Specialist",
-        "model": "google/gemini-2.5-flash-lite",
+        "role": "multimodal",
         "description": (
             "Expert in analysing attached images, screenshots, UI wireframes, "
             "PDF documents, audio/video metadata, and other non-text content. "
@@ -66,7 +67,7 @@ def _build_team_intro(active_roles: List[str]) -> str:
     lines = ["You are part of a Multi-Model AI Agent Team. The team members and their roles are:\n"]
     for role in active_roles:
         card = AGENT_CARDS[role]
-        lines.append(f"  • {card['name']} ({card['model']}): {card['description']}")
+        lines.append(f"  • {card['name']}: {card['description']}")
     lines.append(
         "\nThe Main Controller (relay hub) coordinates the team. "
         "If your response needs input from another team member, you may flag it "
@@ -93,19 +94,13 @@ class SubAgentManager:
         self.client = openrouter_client
         self.provider_router = ProviderRouter(openrouter_client)
 
-    def _get_dynamic_model_for_role(self, role: str, default_model: str) -> str:
+    def _get_dynamic_model_for_role(self, role: str, default_model: str = "openrouter:qwen/qwen3.5-flash-02-23") -> str:
         """Fetch role model override from Redis or SQLite if available."""
         # 1. Try Redis
         if redis_store.is_connected():
             redis_model = redis_store.get_role_model(role)
             if redis_model and redis_model.strip():
-                val = redis_model.strip()
-                if ":" in val:
-                    prov, mid = val.split(":", 1)
-                    if prov in ["google", "openai", "anthropic"] and not mid.startswith(f"{prov}/"):
-                        return f"{prov}/{mid}"
-                    return mid
-                return val
+                return redis_model.strip()
         # 2. Try SQLite
         try:
             db_roles = self.provider_router.memory_store.get_role_assignments()
@@ -115,9 +110,7 @@ class SubAgentManager:
                     prov = item.get("provider", "openrouter")
                     mid = item.get("model_id", "")
                     if mid:
-                        if prov in ["google", "openai", "anthropic"] and not mid.startswith(f"{prov}/"):
-                            return f"{prov}/{mid}"
-                        return mid
+                        return f"{prov}:{mid}"
                 elif isinstance(item, str) and item.strip():
                     return item.strip()
         except Exception:
@@ -192,20 +185,9 @@ class SubAgentManager:
         team_intro: str,
     ) -> Dict[str, Any]:
         card = AGENT_CARDS["reasoning"]
-        system = (
-            f"{team_intro}\n\n"
-            f"YOUR ROLE: {card['name']}\n"
-            "TASK:\n"
-            "1. Analyse the user's request thoroughly.\n"
-            "2. Produce a clear, structured ARCHITECTURAL PLAN with:\n"
-            "   - Problem breakdown\n"
-            "   - Recommended approach & design patterns\n"
-            "   - Security / edge-case considerations\n"
-            "   - Exact steps the Coding Agent should follow\n"
-            "3. Do NOT write the implementation code yourself — the Coding Agent will do that.\n"
-            "4. Keep your plan focused and actionable."
-        )
-        model_id = self._get_dynamic_model_for_role("reasoning", card["model"])
+        base_prompt = PromptLoader.get_prompt("reasoning_prompt", "Analyze the request thoroughly and produce a clear architectural plan.")
+        system = f"{team_intro}\n\nYOUR ROLE: {card['name']}\n{base_prompt}"
+        model_id = self._get_dynamic_model_for_role("reasoning")
         return await self._call_agent("reasoning", model_id, system, user_message, context)
 
     async def _run_multimodal_agent(
@@ -215,14 +197,9 @@ class SubAgentManager:
         team_intro: str,
     ) -> Dict[str, Any]:
         card = AGENT_CARDS["multimodal"]
-        system = (
-            f"{team_intro}\n\n"
-            f"YOUR ROLE: {card['name']}\n"
-            "TASK: Analyse any attached files/images/media referenced in the user message. "
-            "Extract key visual, structural, and contextual details that will help the "
-            "Reasoning and Coding agents understand what the user has shared."
-        )
-        model_id = self._get_dynamic_model_for_role("multimodal", card["model"])
+        base_prompt = PromptLoader.get_prompt("multimodal_prompt", "Analyze any attached files, images, or media referenced in the message.")
+        system = f"{team_intro}\n\nYOUR ROLE: {card['name']}\n{base_prompt}"
+        model_id = self._get_dynamic_model_for_role("multimodal")
         return await self._call_agent("multimodal", model_id, system, user_message, context)
 
     async def _run_coding_agent(
@@ -233,24 +210,16 @@ class SubAgentManager:
         reasoning_plan: str,
     ) -> Dict[str, Any]:
         card = AGENT_CARDS["coding"]
+        base_prompt = PromptLoader.get_prompt("coding_prompt", "Implement the architectural plan faithfully with complete production code.")
         relay_context = (
             "── RELAY FROM 💡 Reasoning & Architecture Agent ──\n"
             f"{reasoning_plan}\n"
             "── END RELAY ──\n\n"
-            "Implement the architectural plan above for the user's request. "
-            "Follow the plan exactly. Write complete, production-ready code."
+            "Implement the architectural plan above for the user's request."
         )
-        system = (
-            f"{team_intro}\n\n"
-            f"YOUR ROLE: {card['name']}\n"
-            "TASK:\n"
-            "1. You have received the architectural plan from the Reasoning Agent (see RELAY below).\n"
-            "2. Implement it faithfully — write complete, production-ready, well-typed code.\n"
-            "3. Include type annotations, docstrings, and error handling.\n"
-            "4. Do NOT re-explain the architecture — the Reasoning Agent already did that."
-        )
+        system = f"{team_intro}\n\nYOUR ROLE: {card['name']}\n{base_prompt}"
         combined_message = f"{relay_context}\n\nOriginal user request:\n{user_message}"
-        model_id = self._get_dynamic_model_for_role("coding", card["model"])
+        model_id = self._get_dynamic_model_for_role("coding")
         return await self._call_agent("coding", model_id, system, combined_message, context)
 
     async def _run_code_review(
@@ -270,19 +239,14 @@ class SubAgentManager:
             f"YOUR ROLE: {card['name']} — Code Reviewer\n"
             "TASK:\n"
             "The Coding Agent has produced an implementation based on your architectural plan.\n"
-            "Review it for:\n"
-            "  - Correctness against your plan\n"
-            "  - Potential bugs or missing edge-case handling\n"
-            "  - Security concerns\n"
-            "  - Anything the Consensus Synthesizer should be aware of\n"
-            "Be concise. Output either '✅ LGTM' with brief notes, or specific corrections."
+            "Review it for correctness, bugs, edge-cases, and security concerns. Output '✅ LGTM' or specific notes."
         )
         review_message = (
             f"Original user request:\n{user_message}\n\n"
             f"My architectural plan:\n{reasoning_plan}\n\n"
             f"Coding Agent's implementation:\n{code_output}"
         )
-        model_id = self._get_dynamic_model_for_role("reasoning", card["model"])
+        model_id = self._get_dynamic_model_for_role("reasoning")
         result = await self._call_agent("reasoning_review", model_id, system, review_message, [])
         return result
 

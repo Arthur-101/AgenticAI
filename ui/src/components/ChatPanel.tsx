@@ -117,7 +117,9 @@ export default function ChatPanel() {
   const loadRoleModels = async () => {
     try {
       const res: any = await invoke('get_role_models');
-      if (res) {
+      if (res?.role_models) {
+        setRoleModels(res.role_models);
+      } else if (res) {
         setRoleModels(res);
       }
     } catch (err) {
@@ -686,7 +688,7 @@ export default function ChatPanel() {
         open={isSettingsOpen}
         onCancel={() => setIsSettingsOpen(false)}
         footer={null}
-        width={800}
+        width={920}
         styles={{
           mask: { backdropFilter: 'blur(8px)', background: 'rgba(0, 0, 0, 0.7)' },
           body: { background: '#0f172a', color: '#f8fafc', padding: '12px 24px 24px 24px' },
@@ -747,11 +749,14 @@ export default function ChatPanel() {
                         );
                       }
 
-                      let selectOptions = catalogForProvider.map(m => ({
-                        value: m.id,
-                        disabled: !m.is_active,
-                        label: `${m.name} (${m.cost_label})`,
-                      }));
+                      let selectOptions = catalogForProvider.map(m => {
+                        const cleanOptVal = getCleanModelId(m.id, currentProvider);
+                        return {
+                          value: cleanOptVal,
+                          disabled: !m.is_active,
+                          label: `${m.name} (${m.cost_label})`,
+                        };
+                      });
 
                       // If currently assigned model ID is valid and not in options, inject fallback option so it displays cleanly!
                       if (cleanModelId && !selectOptions.some(o => o.value === cleanModelId)) {
@@ -763,7 +768,7 @@ export default function ChatPanel() {
                       }
 
                       return (
-                        <Card key={r.role} size="small" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+                        <Card key={r.role} size="small" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)', overflow: 'hidden' }}>
                           <div style={{ fontWeight: 600, color: '#f8fafc', marginBottom: '2px', fontSize: '13px' }}>{r.label}</div>
                           <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>{r.desc}</div>
                           
@@ -786,6 +791,7 @@ export default function ChatPanel() {
                             <Select
                               size="small"
                               showSearch
+                              popupMatchSelectWidth={false}
                               value={cleanModelId || undefined}
                               placeholder={r.role === 'tts' && selectOptions.length === 0 ? "No TTS models available" : "Select model..."}
                               notFoundContent={r.role === 'tts' || r.role === 'stt' ? "No audio models available for this provider" : "No models found"}
@@ -797,9 +803,9 @@ export default function ChatPanel() {
                               }
                               options={selectOptions}
                               optionRender={(option) => {
-                                const m = catalogForProvider.find(item => item.id === option.value);
+                                const m = catalogForProvider.find(item => getCleanModelId(item.id, currentProvider) === option.value);
                                 return (
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', opacity: (m ? m.is_active : true) ? 1 : 0.45 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', opacity: (m ? m.is_active : true) ? 1 : 0.45, gap: '12px' }}>
                                     <span style={{ fontSize: '12px', color: (m ? m.is_active : true) ? '#f8fafc' : '#64748b', fontWeight: 500 }}>
                                       {m?.name || option.value}
                                     </span>
@@ -1520,12 +1526,18 @@ export default function ChatPanel() {
                           </div>
                           {(msg.role === 'assistant' || msg.role === 'sub_agent') && (
                             <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
-                              {msg.role === 'sub_agent' && (
-                                <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(168, 85, 247, 0.3)', fontSize: '10px' }}>
-                                  Tool / Sub-Agent
-                                </span>
+                              {msg.role === 'sub_agent' ? (
+                                <>
+                                  <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(168, 85, 247, 0.3)', fontSize: '10px' }}>
+                                    Tool / Sub-Agent
+                                  </span>
+                                  <span style={{ color: '#38bdf8', fontWeight: 500 }}>
+                                    {msg.model_id ? `Role / Model: ${msg.model_id}` : 'System Tool'}
+                                  </span>
+                                </>
+                              ) : (
+                                <span>Model: {msg.model_id || 'Orchestrator'}</span>
                               )}
-                              <span>Model: {msg.model_id || 'qwen/qwen3.5-flash-02-23'}</span>
                             </div>
                           )}
                         </div>
@@ -1639,15 +1651,12 @@ export default function ChatPanel() {
                 value={selectedModel}
                 onChange={setSelectedModel}
                 style={{ width: 170 }}
-                disabled={!backendRunning || isLoading}
                 options={[
-                  { value: 'auto', label: '⚡ Auto (Supervisor)' },
+                  { value: 'auto', label: '⚡ Auto (Orchestrator)' },
                   { value: 'collaborative', label: '🤝 Multi-Model Team' },
-                  { value: 'qwen', label: 'Qwen 3.5 Flash' },
-                  { value: 'gemini-flash', label: 'Gemini 2.5 Flash' },
-                  { value: 'deepseek-flash', label: 'DeepSeek v4 Flash' },
-                  { value: 'deepseek-pro', label: 'DeepSeek v4 Pro' },
-                  { value: 'mimo', label: 'MIMO v2.5' },
+                  { value: 'coding', label: '🤖 Coding Specialist' },
+                  { value: 'reasoning', label: '💡 Reasoning Specialist' },
+                  { value: 'multimodal', label: '👁️ Vision Specialist' },
                 ]}
               />
               <Tooltip title="Attach Document / Code File (RAG Vector Memory)">

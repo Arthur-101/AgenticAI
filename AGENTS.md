@@ -241,7 +241,18 @@ data/
   - Role Assignment Selection Persistence: Sanitized stored model IDs (`cleanModelId`) and injected fallback options in `ChatPanel.tsx` so background summarizer, STT, TTS, and orchestrator selections persist cleanly without de-selecting when opening Settings.
   - Dedicated STT/TTS Dropdown Filtering: Applied strict keyword filtering to STT and TTS role cards in `ChatPanel.tsx` to display only audio transcription (`whisper`, `stt`, `transcribe`) and speech synthesis (`tts`, `voice`) models. If no TTS/STT models exist for a selected provider, the dropdown renders empty cleanly instead of showing non-audio models.
   - OpenRouter `:free` Model ID Parsing Fix (`openrouter_client.py` & `provider_router.py`): Updated colon-splitting logic in `chat_completion` and `generate` to check if the prefix before `:` is a valid provider name (without `/`). Prevents OpenRouter free model IDs like `nvidia/nemotron-3-ultra-550b-a55b:free` from getting truncated to `"free"`, resolving HTTP 502 Bad Gateway errors.
-  - Direct Provider Tool Calling & Console Logging Architecture (`chat_router.py` & `provider_router.py`): Unified the 25-iteration tool execution loop across both `ProviderRouter` (Google, OpenAI, Anthropic, Groq, Mistral) and `OpenRouterClient`. Added explicit console request/response logging for all direct provider calls (`[HH:MM:SS] 🤖 Requesting completion from direct provider [MISTRAL]...`), resolving single-turn tool bypass and missing console log issues.
+  - Role Models Unpacking Fix (`ChatPanel.tsx`): Updated `loadRoleModels()` to check `res?.role_models` when loading assignments from backend, ensuring Background Summarizer, STT, and TTS selections persist cleanly upon reopening settings.
+  - Option Value Normalization Fix (`ChatPanel.tsx`): Applied `getCleanModelId(m.id, currentProvider)` to option values in `<Select>` so models with provider prefixes like Groq `compound` and `compound-mini` match cleanly without displaying `(Active Assignment)` fallbacks.
+  - Sub-Agent Messages Array Restoration (`basic_tools.py`): Restored `messages` prompt construction block in `ask_expert_model`. Resolves `NameError: name 'messages' is not defined` when invoking `pr.generate(...)`.
+  - Sub-Agent Role & Model UI Label Rendering (`chat_router.py` & `ChatPanel.tsx`): Updated `chat_router.py` tool log payload to include exact `role` and `model` metadata (`REASONING (Groq: compound)`). Updated UI purple card footer in `ChatPanel.tsx` to render `Role / Model: REASONING (google:gemini-3.6-flash)` below sub-agent tool call cards.
+
+  - UI Model Label Fallback Cleanup (`ChatPanel.tsx`): Replaced legacy fallback string `'qwen/qwen3.5-flash-02-23'` on line 1539 with dynamic `'Orchestrator'` label, ensuring no hardcoded model vendor names appear anywhere in the UI message rendering.
+
+
+
+
+
+
 
 
 

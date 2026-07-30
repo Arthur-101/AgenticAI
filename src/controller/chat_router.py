@@ -169,11 +169,13 @@ class ChatRouter:
         """Assemble chat context from summaries and tag-matched messages."""
         context_messages = []
         
-        # Get system prompt from config
-        system_prompt = config.settings.system_prompt
+        from src.utils.prompt_loader import PromptLoader
+
+        # Get system prompt from cached prompt templates
+        system_prompt = PromptLoader.get_prompt("orchestrator_prompt", config.settings.system_prompt)
         
         if is_supervisor:
-            system_prompt += "\n\nSUPERVISOR MODE ENABLED: You are the Agentic Supervisor. You have access to specialized sub-agents via the `ask_expert_model` tool. If the user asks for code, delegate it to DeepSeek ('deepseek'). If the user provides images/audio/video, delegate to Gemini ('gemini'). If the task requires extremely complex logic or math, delegate to MIMO ('mimo'). If the task is simple, just answer it yourself."
+            system_prompt += "\n\nSUPERVISOR MODE ENABLED: You have access to expert sub-agents via the `ask_expert_model` tool. For code implementation use role='coding', for vision/media analysis use role='multimodal', for deep logic/architecture use role='reasoning', and for consensus synthesis use role='synthesizer'."
             
         # Add current datetime to system prompt
         datetime_info = self.tool_manager.basic_tools.get_current_datetime()["result"]
@@ -215,7 +217,7 @@ class ChatRouter:
                 if p.exists() and p.is_file():
                     ext = p.suffix.lower()
                     if ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp3', '.mp4', '.wav']:
-                        extracted_files_context.append(f"--- File Reference: {path_str} ---\n(This is a media file. You MUST use the `ask_expert_model` tool to analyze it by passing this file path to Gemini.)")
+                        extracted_files_context.append(f"--- File Reference: {path_str} ---\n(This is a media file. You MUST use the `ask_expert_model` tool with role='multimodal' to analyze it.)")
                     else:
                         # For small files (< 4KB), we can just dump them in context
                         if p.stat().st_size < 4096:
@@ -371,6 +373,8 @@ class ChatRouter:
         """Select appropriate model based on message and context."""
         # 1. Explicit model override
         if model_override and model_override not in ["auto", "collaborative", "team", "multi_model"]:
+            if model_override.lower() in ["coding", "reasoning", "multimodal", "synthesizer", "summary", "stt", "tts"]:
+                return self._get_assigned_model_for_role(model_override.lower(), config.settings.default_chat_model)
             return model_override
 
         # 2. Redis Orchestrator Role Assignment
@@ -611,10 +615,19 @@ class ChatRouter:
                         from datetime import datetime
                         current_time = datetime.now().strftime("%H:%M:%S")
                         print(f"[{current_time}] 🔧 Tool completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
-                        log_msg = {
-                            "content": f"**Used Tool**: `{name}`",
-                            "model": "System Tool"
-                        }
+                        
+                        if name == "ask_expert_model":
+                            role_name = tool_result.get("role", "sub_agent").upper()
+                            model_used = tool_result.get("model", "Expert Model")
+                            log_msg = {
+                                "content": f"**Sub-Agent Delegated**: `{role_name}`\n\n{tool_result.get('result', '')}",
+                                "model": f"{role_name} ({model_used})"
+                            }
+                        else:
+                            log_msg = {
+                                "content": f"**Used Tool**: `{name}`",
+                                "model": "System Tool"
+                            }
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
 
                     messages.append(Message(
@@ -679,7 +692,7 @@ class ChatRouter:
                 assistant_content = rows[1]["content_raw"]
                 
                 combined = f"User: {user_content}\nAssistant: {assistant_content}"
-                summary_model = self._get_assigned_model_for_role("summary", "openai/gpt-oss-120b")
+                summary_model = self._get_assigned_model_for_role("summary", "openrouter:qwen/qwen3.5-flash-02-23")
                 
                 summary = await self.client.summarize_content(
                     content=combined,
@@ -696,7 +709,7 @@ class ChatRouter:
     async def _extract_and_save_facts(self, user_message: str, tags: List[str]):
         """Extract factual memories, consolidate with existing memories, and auto-update."""
         try:
-            summary_model = self._get_assigned_model_for_role("summary", "openai/gpt-oss-120b")
+            summary_model = self._get_assigned_model_for_role("summary", "openrouter:qwen/qwen3.5-flash-02-23")
             facts = await self.client.extract_memory_facts(user_message, model_id=summary_model)
             if not facts:
                 return

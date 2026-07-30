@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     
     # ── Chat enhancements ─────────────────────────────────────
     default_chat_model: str = ""
-    system_prompt: str = "Your name is Mira, an intelligent Orchestrator AI. You have access to expert sub-agents via the `ask_expert_model` tool. You also have a long-term memory system. When provided with memory snippets, you MUST use them and acknowledge them." # IMPORTANT: DeepSeek is highly capable of general logic, prompt engineering, and complex writing—it is NOT just for coding. Do not force it to write code unless the user explicitly asks for code. Use Mimo-v2.5 for complex reasoning, especially when the user provides multimodal inputs (Images, Audio, Video).
+    system_prompt: str = "You are Antigravity, an intelligent Orchestrator AI. You have access to specialized expert sub-agents via the `ask_expert_model` tool (roles: 'coding', 'reasoning', 'multimodal', 'synthesizer'). You also have long-term memory."
     summary_max_tokens: int = 400
     tag_extraction_model: Optional[str] = None
 
