@@ -59,8 +59,15 @@ class ProviderRouter:
         provider_name = "openrouter"
         clean_model = raw_model
 
+        known_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral", "openrouter", "deepseek", "qwen"]
         if ":" in raw_model:
-            provider_name, clean_model = raw_model.split(":", 1)
+            parts = raw_model.split(":", 1)
+            prov = parts[0].lower().strip()
+            if "/" not in parts[0] and prov in known_providers:
+                provider_name = prov
+                clean_model = parts[1]
+            else:
+                clean_model = raw_model
         elif raw_model.startswith("google/"):
             provider_name = "google"
             clean_model = raw_model.replace("google/", "")
@@ -139,13 +146,7 @@ class ProviderRouter:
             api_key = self.get_api_key_for_provider("mistral")
             if api_key:
                 return await self._generate_mistral_direct(messages, clean_model, api_key, temperature, max_tokens)
-            else:
-                return {
-                    "success": False,
-                    "error": "No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys.",
-                    "content": "⚠️ No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys (or set MISTRAL_API_KEY in .env) to use Mistral.",
-                    "model_id": f"mistral/{clean_model}"
-                }
+            # If no native Mistral API key set, fall through to OpenRouter with mistralai/ prefix!
 
         # 6. OpenRouter API
         formatted_model = clean_model
@@ -158,6 +159,8 @@ class ProviderRouter:
             formatted_model = f"qwen/{clean_model}"
         elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
             formatted_model = f"anthropic/{clean_model}"
+        elif ("mistral" in model_lower or "codestral" in model_lower) and not model_lower.startswith("mistralai/"):
+            formatted_model = f"mistralai/{clean_model}"
 
         from src.models.openrouter_client import Message
         msg_objs = [Message(role=m.get("role", "user"), content=m.get("content", "")) for m in messages]
@@ -454,6 +457,165 @@ class ProviderRouter:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    async def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        model_id: str,
+        temperature: float = 0.7,
+        max_tokens: int = 2000,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Route generation request to appropriate provider with tool calling support."""
+        raw_model = model_id.strip()
+        provider_name = "openrouter"
+        clean_model = raw_model
+
+        known_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral", "openrouter", "deepseek", "qwen"]
+        if ":" in raw_model:
+            parts = raw_model.split(":", 1)
+            prov = parts[0].lower().strip()
+            if "/" not in parts[0] and prov in known_providers:
+                provider_name = prov
+                clean_model = parts[1]
+            else:
+                clean_model = raw_model
+        elif raw_model.startswith("google/"):
+            provider_name = "google"
+            clean_model = raw_model.replace("google/", "")
+        elif raw_model.startswith("openai/"):
+            provider_name = "openai"
+            clean_model = raw_model.replace("openai/", "")
+        elif raw_model.startswith("anthropic/"):
+            provider_name = "anthropic"
+            clean_model = raw_model.replace("anthropic/", "")
+        elif raw_model.startswith("groq/"):
+            provider_name = "groq"
+            clean_model = raw_model.replace("groq/", "")
+        elif raw_model.startswith("mistral/"):
+            provider_name = "mistral"
+            clean_model = raw_model.replace("mistral/", "")
+        elif raw_model.startswith("openrouter/"):
+            provider_name = "openrouter"
+            clean_model = raw_model.replace("openrouter/", "")
+
+        provider_name = provider_name.lower().strip()
+
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        print(f"[{current_time}] 🤖 Requesting completion from direct provider [{provider_name.upper()}]: {clean_model}...")
+
+        # 1. Google AI Studio Direct API
+        if provider_name in ["google", "gemini"]:
+            api_key = self.get_api_key_for_provider("google")
+            if api_key:
+                res = await self._generate_google_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [GOOGLE] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
+                return res
+            else:
+                return {
+                    "success": False,
+                    "error": "No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys.",
+                    "content": "⚠️ No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use Google AI Studio.",
+                    "model_id": f"google/{clean_model}"
+                }
+
+        # 2. OpenAI Native Direct API
+        if provider_name in ["openai"]:
+            api_key = self.get_api_key_for_provider("openai")
+            if api_key:
+                res = await self._generate_openai_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [OPENAI] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
+                return res
+            else:
+                return {
+                    "success": False,
+                    "error": "No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys.",
+                    "content": "⚠️ No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys (or set OPENAI_API_KEY in .env) to use OpenAI.",
+                    "model_id": f"openai/{clean_model}"
+                }
+
+        # 3. Anthropic Direct API
+        if provider_name in ["anthropic", "claude"]:
+            api_key = self.get_api_key_for_provider("anthropic")
+            if api_key:
+                res = await self._generate_anthropic_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [ANTHROPIC] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
+                return res
+            else:
+                return {
+                    "success": False,
+                    "error": "No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys.",
+                    "content": "⚠️ No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys (or set ANTHROPIC_API_KEY in .env) to use Anthropic.",
+                    "model_id": f"anthropic/{clean_model}"
+                }
+
+        # 4. Groq Direct API
+        if provider_name in ["groq"]:
+            api_key = self.get_api_key_for_provider("groq")
+            if api_key:
+                res = await self._generate_groq_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [GROQ] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
+                return res
+            else:
+                return {
+                    "success": False,
+                    "error": "No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys.",
+                    "content": "⚠️ No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys (or set GROQ_API_KEY in .env) to use Groq.",
+                    "model_id": f"groq/{clean_model}"
+                }
+
+        # 5. Mistral Direct API
+        if provider_name in ["mistral"]:
+            api_key = self.get_api_key_for_provider("mistral")
+            if api_key:
+                res = await self._generate_mistral_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [MISTRAL] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
+                return res
+            else:
+                return {
+                    "success": False,
+                    "error": "No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys.",
+                    "content": "⚠️ No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys (or set MISTRAL_API_KEY in .env) to use Mistral AI.",
+                    "model_id": f"mistral/{clean_model}"
+                }
+
+        # 6. OpenRouter API
+        formatted_model = clean_model
+        model_lower = clean_model.lower()
+        if "gemini" in model_lower and not model_lower.startswith("google/"):
+            formatted_model = f"google/{clean_model}"
+        elif "deepseek" in model_lower and not model_lower.startswith("deepseek/"):
+            formatted_model = f"deepseek/{clean_model}"
+        elif "qwen" in model_lower and not model_lower.startswith("qwen/"):
+            formatted_model = f"qwen/{clean_model}"
+        elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
+            formatted_model = f"anthropic/{clean_model}"
+        elif ("mistral" in model_lower or "codestral" in model_lower) and not model_lower.startswith("mistralai/"):
+            formatted_model = f"mistralai/{clean_model}"
+
+        from src.models.openrouter_client import Message
+        msg_objs = []
+        for m in messages:
+            if isinstance(m, dict):
+                msg_objs.append(Message(role=m.get("role", "user"), content=m.get("content", ""), tool_calls=m.get("tool_calls"), tool_call_id=m.get("tool_call_id")))
+            elif isinstance(m, Message):
+                msg_objs.append(m)
+
+        resp = await self.openrouter_client.chat_completion(
+            messages=msg_objs,
+            model_type=formatted_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools
+        )
+        content = ""
+        tool_calls = None
+        if resp.choices:
+            choice_msg = resp.choices[0].get("message", {})
+            content = choice_msg.get("content", "")
+            tool_calls = choice_msg.get("tool_calls", None)
+        tokens = resp.usage.total_tokens if resp.usage else 0
+        return {"content": content, "tool_calls": tool_calls, "model_id": formatted_model, "tokens_used": tokens, "success": True}
+
     # ── Private Provider Direct HTTP Implementations ─────────────────────────────
 
     async def _generate_openai_direct(
@@ -462,28 +624,34 @@ class ProviderRouter:
         model_name: str,
         api_key: str,
         temperature: float,
-        max_tokens: int
+        max_tokens: int,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Direct HTTP call to OpenAI API."""
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",
             "Content-Type": "application/json"
         }
-        payload = json.dumps({
+        body: Dict[str, Any] = {
             "model": model_name,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens
-        }).encode("utf-8")
+        }
+        if tools:
+            body["tools"] = tools
 
+        payload = json.dumps(body).encode("utf-8")
         req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=payload, headers=headers, method="POST")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=30.0))
         data = json.loads(res.read().decode("utf-8"))
         
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        msg = data.get("choices", [{}])[0].get("message", {})
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls", None)
         tokens = data.get("usage", {}).get("total_tokens", 0)
-        return {"content": content, "model_id": f"openai/{model_name}", "tokens_used": tokens, "success": True}
+        return {"content": content, "tool_calls": tool_calls, "model_id": f"openai/{model_name}", "tokens_used": tokens, "success": True}
 
     async def _generate_google_direct(
         self,
@@ -491,7 +659,8 @@ class ProviderRouter:
         model_name: str,
         api_key: str,
         temperature: float,
-        max_tokens: int
+        max_tokens: int,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Direct HTTP call to Google AI Studio Gemini REST API."""
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
@@ -501,11 +670,12 @@ class ProviderRouter:
             contents.append({"role": role, "parts": [{"text": m.get("content", "")}]})
 
         headers = {"Content-Type": "application/json"}
-        payload = json.dumps({
+        payload_dict: Dict[str, Any] = {
             "contents": contents,
             "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens}
-        }).encode("utf-8")
+        }
 
+        payload = json.dumps(payload_dict).encode("utf-8")
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=30.0))
@@ -522,7 +692,8 @@ class ProviderRouter:
         model_name: str,
         api_key: str,
         temperature: float,
-        max_tokens: int
+        max_tokens: int,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Direct HTTP call to Anthropic Messages API."""
         system_msg = ""
@@ -546,6 +717,8 @@ class ProviderRouter:
         }
         if system_msg.strip():
             body["system"] = system_msg.strip()
+        if tools:
+            body["tools"] = tools
 
         payload = json.dumps(body).encode("utf-8")
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, headers=headers, method="POST")
@@ -563,29 +736,36 @@ class ProviderRouter:
         model_name: str,
         api_key: str,
         temperature: float,
-        max_tokens: int
+        max_tokens: int,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Direct HTTP call to Groq API (OpenAI compatible)."""
+        clean_model = model_name.replace("groq/", "").strip()
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        payload = json.dumps({
-            "model": model_name,
+        body: Dict[str, Any] = {
+            "model": clean_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens
-        }).encode("utf-8")
+        }
+        if tools:
+            body["tools"] = tools
 
+        payload = json.dumps(body).encode("utf-8")
         req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=payload, headers=headers, method="POST")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=30.0))
         data = json.loads(res.read().decode("utf-8"))
         
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        msg = data.get("choices", [{}])[0].get("message", {})
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls", None)
         tokens = data.get("usage", {}).get("total_tokens", 0)
-        return {"content": content, "model_id": f"groq/{model_name}", "tokens_used": tokens, "success": True}
+        return {"content": content, "tool_calls": tool_calls, "model_id": f"groq/{clean_model}", "tokens_used": tokens, "success": True}
 
     async def _generate_mistral_direct(
         self,
@@ -593,26 +773,33 @@ class ProviderRouter:
         model_name: str,
         api_key: str,
         temperature: float,
-        max_tokens: int
+        max_tokens: int,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Direct HTTP call to Mistral AI API."""
+        clean_model = model_name.replace("mistralai/", "").replace("mistral/", "").strip()
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        payload = json.dumps({
-            "model": model_name,
+        body: Dict[str, Any] = {
+            "model": clean_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens
-        }).encode("utf-8")
+        }
+        if tools:
+            body["tools"] = tools
 
+        payload = json.dumps(body).encode("utf-8")
         req = urllib.request.Request("https://api.mistral.ai/v1/chat/completions", data=payload, headers=headers, method="POST")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=30.0))
         data = json.loads(res.read().decode("utf-8"))
         
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        msg = data.get("choices", [{}])[0].get("message", {})
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls", None)
         tokens = data.get("usage", {}).get("total_tokens", 0)
-        return {"content": content, "model_id": f"mistral/{model_name}", "tokens_used": tokens, "success": True}
+        return {"content": content, "tool_calls": tool_calls, "model_id": f"mistral/{clean_model}", "tokens_used": tokens, "success": True}

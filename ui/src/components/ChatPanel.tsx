@@ -151,11 +151,60 @@ export default function ChatPanel() {
     }
   };
 
+  const getCleanModelId = (rawModelId: string, provider: string) => {
+    if (!rawModelId) return '';
+    let m = rawModelId.trim();
+    const pPrefix = `${provider.toLowerCase()}:`;
+    if (m.toLowerCase().startsWith(pPrefix)) {
+      m = m.substring(pPrefix.length);
+    }
+    if (provider.toLowerCase() !== 'openrouter' && m.toLowerCase().startsWith(`${provider.toLowerCase()}/`)) {
+      m = m.substring(provider.length + 1);
+    }
+    return m;
+  };
+
+  const handleProviderChange = async (role: string, newProv: string) => {
+    let catalog = providerCatalog[newProv];
+    if (!catalog || catalog.length === 0) {
+      try {
+        const res: any = await invoke('get_available_models', { provider: newProv });
+        if (Array.isArray(res)) {
+          catalog = res;
+          setProviderCatalog(prev => ({ ...prev, [newProv]: res }));
+        }
+      } catch (e) {
+        console.error('Error fetching provider models:', e);
+      }
+    }
+    let targetModels = catalog || [];
+    if (role === 'stt') {
+      targetModels = targetModels.filter(m => 
+        m.id.toLowerCase().includes('whisper') ||
+        m.id.toLowerCase().includes('stt') ||
+        m.id.toLowerCase().includes('audio') ||
+        m.id.toLowerCase().includes('transcribe') ||
+        m.name.toLowerCase().includes('speech-to-text') ||
+        m.name.toLowerCase().includes('stt')
+      );
+    } else if (role === 'tts') {
+      targetModels = targetModels.filter(m => 
+        m.id.toLowerCase().includes('tts') ||
+        m.id.toLowerCase().includes('voice') ||
+        m.id.toLowerCase().includes('speech') ||
+        m.name.toLowerCase().includes('text-to-speech') ||
+        m.name.toLowerCase().includes('tts')
+      );
+    }
+    const firstActive = targetModels.find(m => m.is_active)?.id || '';
+    handleUpdateRoleModel(role, newProv, firstActive);
+  };
+
   const handleUpdateRoleModel = async (role: string, provider: string, modelId: string) => {
     try {
       await invoke('update_role_model', { role, provider, modelId });
       setRoleModels(prev => ({ ...prev, [role]: { provider, model_id: modelId } }));
-      antdMessage.success(`Model for [${role}] updated to [${provider.toUpperCase()}] ${modelId} (Hot-reloaded!)`);
+      antdMessage.success(`Model for [${role}] updated to [${provider.toUpperCase()}] ${modelId || 'None'} (Hot-reloaded!)`);
     } catch (err) {
       antdMessage.error(`Failed to update role model: ${err}`);
     }
@@ -674,20 +723,13 @@ export default function ChatPanel() {
                     ].map(r => {
                       const roleConfig = roleModels[r.role] || { provider: 'openrouter', model_id: '' };
                       const currentProvider = roleConfig.provider || 'openrouter';
-                      
-                      // Sanitize model ID prefix if stored as "provider:model_id" or "provider/model_id"
-                      let cleanModelId = roleConfig.model_id || '';
-                      if (cleanModelId.includes(':')) {
-                        cleanModelId = cleanModelId.split(':')[1];
-                      } else if (cleanModelId.includes('/') && !cleanModelId.startsWith('openrouter/')) {
-                        cleanModelId = cleanModelId.split('/')[1];
-                      }
+                      const cleanModelId = getCleanModelId(roleConfig.model_id, currentProvider);
 
                       let catalogForProvider = providerCatalog[currentProvider] || [];
 
-                      // Apply role-specific filtering for STT and TTS models
+                      // Apply strict role-specific filtering for STT and TTS models (do NOT fall back to non-audio models)
                       if (r.role === 'stt') {
-                        const sttFiltered = catalogForProvider.filter(m => 
+                        catalogForProvider = catalogForProvider.filter(m => 
                           m.id.toLowerCase().includes('whisper') ||
                           m.id.toLowerCase().includes('stt') ||
                           m.id.toLowerCase().includes('audio') ||
@@ -695,20 +737,14 @@ export default function ChatPanel() {
                           m.name.toLowerCase().includes('speech-to-text') ||
                           m.name.toLowerCase().includes('stt')
                         );
-                        if (sttFiltered.length > 0) {
-                          catalogForProvider = sttFiltered;
-                        }
                       } else if (r.role === 'tts') {
-                        const ttsFiltered = catalogForProvider.filter(m => 
+                        catalogForProvider = catalogForProvider.filter(m => 
                           m.id.toLowerCase().includes('tts') ||
                           m.id.toLowerCase().includes('voice') ||
                           m.id.toLowerCase().includes('speech') ||
                           m.name.toLowerCase().includes('text-to-speech') ||
                           m.name.toLowerCase().includes('tts')
                         );
-                        if (ttsFiltered.length > 0) {
-                          catalogForProvider = ttsFiltered;
-                        }
                       }
 
                       let selectOptions = catalogForProvider.map(m => ({
@@ -717,7 +753,7 @@ export default function ChatPanel() {
                         label: `${m.name} (${m.cost_label})`,
                       }));
 
-                      // If currently assigned model ID is not present in options (e.g. while catalog is loading), inject fallback option
+                      // If currently assigned model ID is valid and not in options, inject fallback option so it displays cleanly!
                       if (cleanModelId && !selectOptions.some(o => o.value === cleanModelId)) {
                         selectOptions.unshift({
                           value: cleanModelId,
@@ -735,12 +771,7 @@ export default function ChatPanel() {
                             <Select
                               size="small"
                               value={currentProvider}
-                              onChange={(newProv) => {
-                                loadProviderModels(newProv);
-                                const catalog = providerCatalog[newProv] || [];
-                                const firstActive = catalog.find(m => m.is_active)?.id || roleConfig.model_id;
-                                handleUpdateRoleModel(r.role, newProv, firstActive);
-                              }}
+                              onChange={(newProv) => handleProviderChange(r.role, newProv)}
                               style={{ width: '100%' }}
                               options={[
                                 { value: 'openrouter', label: '🌐 OpenRouter' },
@@ -756,7 +787,8 @@ export default function ChatPanel() {
                               size="small"
                               showSearch
                               value={cleanModelId || undefined}
-                              placeholder="Select model..."
+                              placeholder={r.role === 'tts' && selectOptions.length === 0 ? "No TTS models available" : "Select model..."}
+                              notFoundContent={r.role === 'tts' || r.role === 'stt' ? "No audio models available for this provider" : "No models found"}
                               onChange={(newModelId) => handleUpdateRoleModel(r.role, currentProvider, newModelId)}
                               style={{ width: '100%' }}
                               filterOption={(input, option) =>

@@ -417,58 +417,87 @@ class ChatRouter:
             prov_prefix = "openai"
         elif target_model.startswith("anthropic/"):
             prov_prefix = "anthropic"
+        elif target_model.startswith("groq/"):
+            prov_prefix = "groq"
+        elif target_model.startswith("mistral/"):
+            prov_prefix = "mistral"
 
-        if hasattr(self, "provider_router") and self.provider_router and prov_prefix in ["google", "gemini", "openai", "anthropic", "claude"]:
+        direct_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral"]
+        use_direct = hasattr(self, "provider_router") and self.provider_router and prov_prefix in direct_providers
+
+        if use_direct:
             key = self.provider_router.get_api_key_for_provider(prov_prefix)
-            if key:
-                # Direct provider execution via ProviderRouter
-                dict_messages = [{"role": m.role, "content": m.content} for m in messages]
-                res_dict = await self.provider_router.generate(dict_messages, target_model)
-                content = res_dict.get("content", "") if isinstance(res_dict, dict) else str(res_dict)
-                tokens = res_dict.get("tokens_used", 0) if isinstance(res_dict, dict) else 0
-                final_model = res_dict.get("model_id", target_model) if isinstance(res_dict, dict) else target_model
-                return {"content": content, "model_id": final_model, "tokens_used": tokens}
-            else:
-                prov_disp = "Google AI Studio" if prov_prefix in ["google", "gemini"] else prov_prefix.capitalize()
+            if not key:
+                prov_disp = "Google AI Studio" if prov_prefix in ["google", "gemini"] else "Mistral AI" if prov_prefix == "mistral" else prov_prefix.capitalize()
                 return {
-                    "content": f"⚠️ No {prov_disp} API Key registered. Please add your {prov_disp} API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use {prov_disp} directly.",
+                    "content": f"⚠️ No {prov_disp} API Key registered. Please add your {prov_disp} API key in Settings -> Models & API Keys to use {prov_disp} directly.",
                     "model_id": target_model,
                     "tokens_used": 0
                 }
 
         max_iterations = 25
         total_tokens = 0
-        final_model_id = str(model_type)
+        final_model_id = target_model
         
         for iteration in range(max_iterations):
             try:
-                response = await self.client.chat_completion(
-                    messages=messages,
-                    model_type=model_type,
-                    tools=tools_schema if tools_schema else None,
-                )
-                
-                # Get token usage
-                if response.usage:
-                    total_tokens += response.usage.total_tokens
-                
-                if hasattr(response, 'model') and response.model:
-                    final_model_id = response.model
-                elif isinstance(model_type, str):
-                    final_model_id = model_type
-                
-                if response.error:
-                    error_msg = response.error.get("message", "Unknown API error")
-                    return {"content": f"API Error: {error_msg}", "model_id": final_model_id, "tokens_used": total_tokens}
-                
-                if not response.choices:
-                    return {"content": "No response generated.", "model_id": final_model_id, "tokens_used": total_tokens}
-                
-                choice = response.choices[0]
-                message_data = choice.get("message", {})
-                
-                content = message_data.get("content")
-                tool_calls = message_data.get("tool_calls")
+                content = None
+                tool_calls = None
+
+                if use_direct:
+                    dict_messages = []
+                    for m in messages:
+                        if isinstance(m, Message):
+                            msg_item: Dict[str, Any] = {"role": m.role, "content": m.content if m.content else ""}
+                            if m.tool_calls:
+                                msg_item["tool_calls"] = m.tool_calls
+                            if m.tool_call_id:
+                                msg_item["tool_call_id"] = m.tool_call_id
+                            dict_messages.append(msg_item)
+                        elif isinstance(m, dict):
+                            dict_messages.append(m)
+
+                    res_dict = await self.provider_router.generate(
+                        messages=dict_messages,
+                        model_id=target_model,
+                        tools=tools_schema if tools_schema else None
+                    )
+
+                    if not res_dict.get("success", True) and res_dict.get("error"):
+                        return {"content": f"API Error: {res_dict.get('error')}", "model_id": target_model, "tokens_used": total_tokens}
+
+                    content = res_dict.get("content", "")
+                    tool_calls = res_dict.get("tool_calls", None)
+                    tokens = res_dict.get("tokens_used", 0)
+                    total_tokens += tokens
+                    if res_dict.get("model_id"):
+                        final_model_id = res_dict.get("model_id")
+                else:
+                    response = await self.client.chat_completion(
+                        messages=messages,
+                        model_type=model_type,
+                        tools=tools_schema if tools_schema else None,
+                    )
+                    
+                    if response.usage:
+                        total_tokens += response.usage.total_tokens
+                    
+                    if hasattr(response, 'model') and response.model:
+                        final_model_id = response.model
+                    elif isinstance(model_type, str):
+                        final_model_id = model_type
+                    
+                    if response.error:
+                        error_msg = response.error.get("message", "Unknown API error")
+                        return {"content": f"API Error: {error_msg}", "model_id": final_model_id, "tokens_used": total_tokens}
+                    
+                    if not response.choices:
+                        return {"content": "No response generated.", "model_id": final_model_id, "tokens_used": total_tokens}
+                    
+                    choice = response.choices[0]
+                    message_data = choice.get("message", {})
+                    content = message_data.get("content")
+                    tool_calls = message_data.get("tool_calls")
                 
                 # Append assistant's message to context for the next iteration
                 messages.append(Message(

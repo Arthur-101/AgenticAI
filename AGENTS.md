@@ -239,7 +239,14 @@ data/
   - Groq Cloudflare HTTP 403 Fix: Added browser `User-Agent` header to all Groq and Mistral HTTP requests in `provider_router.py`, resolving Cloudflare error 1010 during key verification and catalog fetching.
   - Favorite Models Top Sorting: Updated `_handle_get_model_tracker_data` in `embedded_backend.py` and `dataSource` sorting in `ChatPanel.tsx` so ⭐ Favorite models always render at the very top of the Model Catalog & Tracker table.
   - Role Assignment Selection Persistence: Sanitized stored model IDs (`cleanModelId`) and injected fallback options in `ChatPanel.tsx` so background summarizer, STT, TTS, and orchestrator selections persist cleanly without de-selecting when opening Settings.
-  - Dedicated STT/TTS Dropdown Filtering: Applied strict keyword filtering to STT and TTS role cards in `ChatPanel.tsx` to display only audio transcription (`whisper`, `stt`, `transcribe`) and speech synthesis (`tts`, `voice`) models.
+  - Dedicated STT/TTS Dropdown Filtering: Applied strict keyword filtering to STT and TTS role cards in `ChatPanel.tsx` to display only audio transcription (`whisper`, `stt`, `transcribe`) and speech synthesis (`tts`, `voice`) models. If no TTS/STT models exist for a selected provider, the dropdown renders empty cleanly instead of showing non-audio models.
+  - OpenRouter `:free` Model ID Parsing Fix (`openrouter_client.py` & `provider_router.py`): Updated colon-splitting logic in `chat_completion` and `generate` to check if the prefix before `:` is a valid provider name (without `/`). Prevents OpenRouter free model IDs like `nvidia/nemotron-3-ultra-550b-a55b:free` from getting truncated to `"free"`, resolving HTTP 502 Bad Gateway errors.
+  - Direct Provider Tool Calling & Console Logging Architecture (`chat_router.py` & `provider_router.py`): Unified the 25-iteration tool execution loop across both `ProviderRouter` (Google, OpenAI, Anthropic, Groq, Mistral) and `OpenRouterClient`. Added explicit console request/response logging for all direct provider calls (`[HH:MM:SS] 🤖 Requesting completion from direct provider [MISTRAL]...`), resolving single-turn tool bypass and missing console log issues.
+
+
+
+
+
 
 
 

@@ -162,21 +162,30 @@ class OpenRouterClient:
             model_id = self.model_ids[model_type]
         else:
             raw_str = str(model_type).strip()
+            known_providers = ["google", "gemini", "deepseek", "qwen", "anthropic", "claude", "openai", "groq", "mistral", "openrouter"]
             if ":" in raw_str:
-                prov, mid = raw_str.split(":", 1)
-                prov_lower = prov.lower().strip()
-                if prov_lower in ["google", "gemini"]:
-                    model_id = f"google/{mid}"
-                elif prov_lower in ["deepseek"]:
-                    model_id = f"deepseek/{mid}"
-                elif prov_lower in ["qwen"]:
-                    model_id = f"qwen/{mid}"
-                elif prov_lower in ["anthropic", "claude"]:
-                    model_id = f"anthropic/{mid}"
-                elif prov_lower in ["openai"]:
-                    model_id = f"openai/{mid}"
+                parts = raw_str.split(":", 1)
+                prov = parts[0].lower().strip()
+                if "/" not in parts[0] and prov in known_providers:
+                    mid = parts[1]
+                    if prov == "openrouter":
+                        model_id = mid
+                    elif prov in ["google", "gemini"]:
+                        model_id = f"google/{mid}" if not mid.startswith("google/") else mid
+                    elif prov == "deepseek":
+                        model_id = f"deepseek/{mid}" if not mid.startswith("deepseek/") else mid
+                    elif prov == "qwen":
+                        model_id = f"qwen/{mid}" if not mid.startswith("qwen/") else mid
+                    elif prov in ["anthropic", "claude"]:
+                        model_id = f"anthropic/{mid}" if not mid.startswith("anthropic/") else mid
+                    elif prov == "openai":
+                        model_id = f"openai/{mid}" if not mid.startswith("openai/") else mid
+                    elif prov in ["mistral"]:
+                        model_id = f"mistralai/{mid}" if not mid.startswith("mistralai/") else mid
+                    else:
+                        model_id = mid
                 else:
-                    model_id = mid
+                    model_id = raw_str
             else:
                 model_id = raw_str.replace("openrouter/", "")
                 
@@ -189,6 +198,8 @@ class OpenRouterClient:
                 model_id = f"qwen/{model_id}"
             elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
                 model_id = f"anthropic/{model_id}"
+            elif ("mistral" in model_lower or "codestral" in model_lower) and not model_lower.startswith("mistralai/"):
+                model_id = f"mistralai/{model_id}"
             
         # Use defaults if not provided
         if temperature is None:
