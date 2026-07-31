@@ -246,7 +246,14 @@ data/
   - Sub-Agent Messages Array Restoration (`basic_tools.py`): Restored `messages` prompt construction block in `ask_expert_model`. Resolves `NameError: name 'messages' is not defined` when invoking `pr.generate(...)`.
   - Sub-Agent Role & Model UI Label Rendering (`chat_router.py` & `ChatPanel.tsx`): Updated `chat_router.py` tool log payload to include exact `role` and `model` metadata (`REASONING (Groq: compound)`). Updated UI purple card footer in `ChatPanel.tsx` to render `Role / Model: REASONING (google:gemini-3.6-flash)` below sub-agent tool call cards.
 
-  - UI Model Label Fallback Cleanup (`ChatPanel.tsx`): Replaced legacy fallback string `'qwen/qwen3.5-flash-02-23'` on line 1539 with dynamic `'Orchestrator'` label, ensuring no hardcoded model vendor names appear anywhere in the UI message rendering.
+  - Tauri IPC CamelCase Parameter Mapping Fix (`ChatPanel.tsx` & `lib.rs`): Restored standard Tauri frontend camelCase keys (`keyValue`, `modelId`) in `ChatPanel.tsx` while defining optional Rust arguments (`key_value: Option<String>`, `keyValue: Option<String>`, `model_id: Option<String>`, `modelId: Option<String>`) in `lib.rs`. Resolves Tauri IPC parameter deserialization errors (`missing required key keyValue`) when saving or testing API keys and role assignments.
+  - Dual IPC Parameter Support (`lib.rs` & `ChatPanel.tsx`): Enabled dual parameter resolution (`key_value.or(keyValue)`, `model_id.or(modelId)`) across `add_api_key`, `update_role_model`, `test_api_key`, and `save_model_note` in Rust. Fixed issue where API keys entered in UI were saved as empty strings to SQLite due to parameter casing mismatches.
+  - Automatic OpenRouter Pass-Through Fallback (`provider_router.py`): Enhanced `ProviderRouter.generate` so that if a direct provider (Google AI Studio, Groq, OpenAI, Anthropic, Mistral) is missing a direct API key or encounters an HTTP/network failure, the system automatically routes the user's **exact requested model** (`google/gemini-3.5-flash`, `openai/gpt-oss-120b`, etc.) through OpenRouter using the active OpenRouter key. Eliminates silent Qwen model fallbacks entirely when user-selected models are specified.
+  - Dynamic Synthesizer Model Resolution (`consensus_aggregator.py`): Updated `ConsensusAggregator` to dynamically resolve assigned synthesizer models from Redis/SQLite instead of using a hardcoded default model.
+
+
+
+
 
 
 

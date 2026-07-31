@@ -204,7 +204,7 @@ export default function ChatPanel() {
 
   const handleUpdateRoleModel = async (role: string, provider: string, modelId: string) => {
     try {
-      await invoke('update_role_model', { role, provider, modelId });
+      await invoke('update_role_model', { role, provider, modelId, model_id: modelId });
       setRoleModels(prev => ({ ...prev, [role]: { provider, model_id: modelId } }));
       antdMessage.success(`Model for [${role}] updated to [${provider.toUpperCase()}] ${modelId || 'None'} (Hot-reloaded!)`);
     } catch (err) {
@@ -232,6 +232,7 @@ export default function ChatPanel() {
       await invoke('add_api_key', {
         provider: newProvider,
         keyValue: newKeyValue.trim(),
+        key_value: newKeyValue.trim(),
         label: newKeyLabel.trim() || undefined
       });
       antdMessage.success(`API Key for [${newProvider}] saved to SQLite database!`);
@@ -256,9 +257,11 @@ export default function ChatPanel() {
   const handleTestApiKey = async (provider: string, keyValue?: string) => {
     setIsTestingKey(true);
     try {
+      const val = keyValue || newKeyValue.trim() || undefined;
       const res: any = await invoke('test_api_key', {
         provider,
-        keyValue: keyValue || newKeyValue.trim()
+        keyValue: val,
+        key_value: val
       });
       if (res && res.success) {
         antdMessage.success(`⚡ ${provider.toUpperCase()} API Key test successful!`);

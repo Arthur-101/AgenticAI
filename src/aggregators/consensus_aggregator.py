@@ -5,12 +5,36 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
+from src.models.provider_router import ProviderRouter
+from src.memory.redis_store import redis_store
+
 class ConsensusAggregator:
     """Synthesizes parallel sub-agent outputs into a unified master response."""
     
     def __init__(self, openrouter_client):
         self.client = openrouter_client
-        self.synthesizer_model = "google/gemini-2.5-flash-lite"
+        self.provider_router = ProviderRouter(openrouter_client)
+
+    def _get_synthesizer_model(self) -> str:
+        """Fetch synthesizer role model override from Redis or SQLite."""
+        if redis_store.is_connected():
+            r_mod = redis_store.get_role_model("synthesizer")
+            if r_mod and r_mod.strip():
+                return r_mod.strip()
+        try:
+            db_roles = self.provider_router.memory_store.get_role_assignments()
+            if "synthesizer" in db_roles:
+                item = db_roles["synthesizer"]
+                if isinstance(item, dict):
+                    p = item.get("provider", "openrouter")
+                    m = item.get("model_id", "")
+                    if m:
+                        return f"{p}:{m}"
+                elif isinstance(item, str) and item.strip():
+                    return item.strip()
+        except Exception:
+            pass
+        return "openrouter:google/gemini-2.5-flash-lite"
         
     async def synthesize_response(
         self,
@@ -21,7 +45,8 @@ class ConsensusAggregator:
         if not sub_agent_results:
             return {"content": "No sub-agent outputs available to aggregate.", "tokens_used": 0}
             
-        print(f"🧩 Synthesizing sub-agent team consensus using {self.synthesizer_model}...", file=sys.stderr, flush=True)
+        target_model = self._get_synthesizer_model()
+        print(f"🧩 Synthesizing sub-agent team consensus using {target_model}...", file=sys.stderr, flush=True)
         
         # Prepare sub-agent content payload
         formatted_inputs = []
@@ -55,12 +80,12 @@ class ConsensusAggregator:
         user_prompt = f"ORIGINAL USER PROMPT:\n{user_message}\n\nSUB-AGENT TEAM CONTRIBUTIONS:\n{team_payload}"
         
         try:
-            response = await self.client.generate(
+            response = await self.provider_router.generate(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                model_id=self.synthesizer_model,
+                model_id=target_model,
                 temperature=0.2,
                 max_tokens=3000
             )
@@ -71,7 +96,7 @@ class ConsensusAggregator:
             return {
                 "content": master_content,
                 "sub_agent_outputs": sub_agent_results,
-                "synthesizer_model": self.synthesizer_model,
+                "synthesizer_model": target_model,
                 "tokens_used": total_sub_agent_tokens + synthesizer_tokens
             }
         except Exception as e:

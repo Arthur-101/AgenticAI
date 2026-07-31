@@ -24,7 +24,7 @@ class EmbeddedBackend:
     """Minimal backend that handles JSON-RPC requests via stdin/stdout."""
     
     def __init__(self):
-        self.memory = SQLiteMemoryStore(db_path="data/agenticai.db")
+        self.memory = SQLiteMemoryStore(db_path=config.settings.sqlite_db_path)
         self.router = ChatRouter(
             memory_store=self.memory
         )
@@ -350,7 +350,7 @@ class EmbeddedBackend:
         """Update model assignment for a role and update Redis + SQLite."""
         role = params.get("role", "").lower().strip()
         provider = params.get("provider", "openrouter").lower().strip()
-        model_id = params.get("model_id", "").strip()
+        model_id = (params.get("model_id") or params.get("modelId") or "").strip()
         if not role or not model_id:
             return {
                 "jsonrpc": "2.0",
@@ -394,7 +394,7 @@ class EmbeddedBackend:
     def _handle_add_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add or update an API key for a provider."""
         provider = params.get("provider", "").strip().lower()
-        key_value = params.get("key_value", "").strip()
+        key_value = (params.get("key_value") or params.get("keyValue") or "").strip()
         label = params.get("label")
         if not provider or not key_value:
             return {
@@ -423,18 +423,20 @@ class EmbeddedBackend:
 
     async def _handle_test_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Test API key for a provider."""
-        provider = params.get("provider", "").strip().lower()
-        key_value = params.get("key_value", "").strip()
-        model_id = params.get("model_id")
+        provider = (params.get("provider") or "").strip().lower()
+        key_value = (params.get("key_value") or params.get("keyValue") or "").strip()
+        model_id = params.get("model_id") or params.get("modelId")
         
-        # If no key_value provided, look up from DB
+        # If no key_value provided, look up from DB or env
         if not key_value:
-            key_value = self.memory.get_api_key_by_provider(provider) or ""
+            from src.models.provider_router import ProviderRouter
+            pr = ProviderRouter(memory_store=self.memory)
+            key_value = (pr.get_api_key_for_provider(provider) or "").strip()
             
         if not provider or not key_value:
             return {
                 "jsonrpc": "2.0",
-                "error": {"code": -32602, "message": "Provider and key_value are required"},
+                "result": {"success": False, "error": f"No API Key found for provider [{provider}]. Please enter a key or set environment variable."},
                 "id": params.get("request_id")
             }
             
@@ -501,9 +503,10 @@ class EmbeddedBackend:
 
     def _handle_save_model_note(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Save user note and favorite status for a model."""
-        model_id = params.get("model_id", "").strip()
+        model_id = (params.get("model_id") or params.get("modelId") or "").strip()
         provider = params.get("provider", "openrouter").strip()
-        is_favorite = int(params.get("is_favorite", 0))
+        fav_val = params.get("is_favorite") if "is_favorite" in params else params.get("isFavorite", 0)
+        is_favorite = 1 if fav_val else 0
         notes = params.get("notes", "").strip()
         
         if not model_id:

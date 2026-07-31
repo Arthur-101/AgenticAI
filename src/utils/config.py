@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     model_summary_cost_output: float = 0.0
 
     # ── Memory configuration ─────────────────────────────────
-    sqlite_db_path: str = "data/sqlite/memory.db"
+    sqlite_db_path: str = "data/agenticai.db"
     chroma_db_path: str = "data/chroma"
     documents_path: str = "data/documents"
     redis_url: str = "redis://localhost:6379/0"

@@ -400,12 +400,14 @@ async fn update_role_model(
     app_handle: tauri::AppHandle,
     role: String,
     provider: String,
-    model_id: String
+    model_id: Option<String>,
+    modelId: Option<String>
 ) -> Result<serde_json::Value, String> {
+    let actual_model = model_id.or(modelId).unwrap_or_default();
     let params = json!({
         "role": role,
         "provider": provider,
-        "model_id": model_id,
+        "model_id": actual_model,
         "request_id": Uuid::new_v4().to_string()
     });
     let result = send_json_rpc(&app_handle, "update_role_model", params, None).await?;
@@ -426,12 +428,14 @@ async fn get_api_keys(app_handle: tauri::AppHandle) -> Result<Vec<serde_json::Va
 async fn add_api_key(
     app_handle: tauri::AppHandle,
     provider: String,
-    key_value: String,
+    key_value: Option<String>,
+    keyValue: Option<String>,
     label: Option<String>
 ) -> Result<serde_json::Value, String> {
+    let actual_key = key_value.or(keyValue).unwrap_or_default();
     let params = json!({
         "provider": provider,
-        "key_value": key_value,
+        "key_value": actual_key,
         "label": label,
         "request_id": Uuid::new_v4().to_string()
     });
@@ -456,13 +460,17 @@ async fn delete_api_key(
 async fn test_api_key(
     app_handle: tauri::AppHandle,
     provider: String,
-    key_value: String,
-    model_id: Option<String>
+    key_value: Option<String>,
+    keyValue: Option<String>,
+    model_id: Option<String>,
+    modelId: Option<String>
 ) -> Result<serde_json::Value, String> {
+    let actual_key = key_value.or(keyValue);
+    let actual_model = model_id.or(modelId);
     let params = json!({
         "provider": provider,
-        "key_value": key_value,
-        "model_id": model_id,
+        "key_value": actual_key,
+        "model_id": actual_model,
         "request_id": Uuid::new_v4().to_string()
     });
     let result = send_json_rpc(&app_handle, "test_api_key", params, None).await?;
@@ -483,15 +491,19 @@ async fn get_model_tracker_data(
 #[tauri::command]
 async fn save_model_note(
     app_handle: tauri::AppHandle,
-    modelId: String,
+    modelId: Option<String>,
+    model_id: Option<String>,
     provider: String,
-    isFavorite: bool,
+    isFavorite: Option<bool>,
+    is_favorite: Option<bool>,
     notes: String
 ) -> Result<serde_json::Value, String> {
+    let actual_model = model_id.or(modelId).unwrap_or_default();
+    let fav = is_favorite.or(isFavorite).unwrap_or(false);
     let params = json!({
-        "model_id": modelId,
+        "model_id": actual_model,
         "provider": provider,
-        "is_favorite": if isFavorite { 1 } else { 0 },
+        "is_favorite": if fav { 1 } else { 0 },
         "notes": notes,
         "request_id": Uuid::new_v4().to_string()
     });
