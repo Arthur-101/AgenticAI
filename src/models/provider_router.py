@@ -759,10 +759,17 @@ class ProviderRouter:
         from src.models.openrouter_client import extract_text_content
         formatted_messages = []
         for m in messages:
-            formatted_messages.append({
+            msg_item = {
                 "role": m.get("role", "user"),
                 "content": extract_text_content(m.get("content"))
-            })
+            }
+            if m.get("tool_calls"):
+                msg_item["tool_calls"] = m.get("tool_calls")
+            if m.get("tool_call_id"):
+                msg_item["tool_call_id"] = m.get("tool_call_id")
+            if m.get("name"):
+                msg_item["name"] = m.get("name")
+            formatted_messages.append(msg_item)
 
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",
@@ -816,12 +823,11 @@ class ProviderRouter:
         for m in messages:
             role = m.get("role", "user")
             txt = extract_text_content(m.get("content"))
-            if not txt.strip():
-                continue
             if role == "system":
-                system_instruction_parts.append({"text": txt})
+                if txt.strip():
+                    system_instruction_parts.append({"text": txt})
             else:
-                g_role = "user" if role in ["user"] else "model"
+                g_role = "user" if role in ["user", "tool"] else "model"
                 # Merge with previous turn if same role to avoid Google API consecutive turn rejection
                 if contents and contents[-1]["role"] == g_role:
                     contents[-1]["parts"][0]["text"] += f"\n\n{txt}"
@@ -931,10 +937,17 @@ class ProviderRouter:
         clean_model = model_name.replace("groq/", "").strip()
         formatted_messages = []
         for m in messages:
-            formatted_messages.append({
+            msg_item = {
                 "role": m.get("role", "user"),
                 "content": extract_text_content(m.get("content"))
-            })
+            }
+            if m.get("tool_calls"):
+                msg_item["tool_calls"] = m.get("tool_calls")
+            if m.get("tool_call_id"):
+                msg_item["tool_call_id"] = m.get("tool_call_id")
+            if m.get("name"):
+                msg_item["name"] = m.get("name")
+            formatted_messages.append(msg_item)
 
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",
@@ -970,6 +983,17 @@ class ProviderRouter:
             logger.error(f"Groq Direct API error: {e}")
             return {"success": False, "error": str(e), "model_id": f"groq/{clean_model}"}
 
+    @staticmethod
+    def _sanitize_mistral_tool_call_id(id_str: str) -> str:
+        """Mistral API requires tool call IDs to be exactly 9 alphanumeric characters [a-zA-Z0-9]."""
+        if not id_str:
+            return "call00000"
+        import re, hashlib
+        clean = re.sub(r'[^a-zA-Z0-9]', '', id_str)
+        if len(clean) == 9:
+            return clean
+        return hashlib.md5(id_str.encode('utf-8')).hexdigest()[:9]
+
     async def _generate_mistral_direct(
         self,
         messages: List[Dict[str, Any]],
@@ -984,10 +1008,23 @@ class ProviderRouter:
         clean_model = model_name.replace("mistralai/", "").replace("mistral/", "").strip()
         formatted_messages = []
         for m in messages:
-            formatted_messages.append({
+            msg_item = {
                 "role": m.get("role", "user"),
                 "content": extract_text_content(m.get("content"))
-            })
+            }
+            if m.get("tool_calls"):
+                sanitized_tc = []
+                for tc in m.get("tool_calls", []):
+                    tc_copy = dict(tc)
+                    if tc_copy.get("id"):
+                        tc_copy["id"] = self._sanitize_mistral_tool_call_id(tc_copy["id"])
+                    sanitized_tc.append(tc_copy)
+                msg_item["tool_calls"] = sanitized_tc
+            if m.get("tool_call_id"):
+                msg_item["tool_call_id"] = self._sanitize_mistral_tool_call_id(m.get("tool_call_id"))
+            if m.get("name"):
+                msg_item["name"] = m.get("name")
+            formatted_messages.append(msg_item)
 
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",
@@ -1013,6 +1050,10 @@ class ProviderRouter:
             msg = data.get("choices", [{}])[0].get("message", {})
             content = extract_text_content(msg.get("content", ""))
             tool_calls = msg.get("tool_calls", None)
+            if tool_calls:
+                for tc in tool_calls:
+                    if isinstance(tc, dict) and tc.get("id"):
+                        tc["id"] = self._sanitize_mistral_tool_call_id(tc["id"])
             tokens = data.get("usage", {}).get("total_tokens", 0)
             return {"content": content, "tool_calls": tool_calls, "model_id": f"mistral/{clean_model}", "tokens_used": tokens, "success": True}
         except urllib.error.HTTPError as http_err:

@@ -211,33 +211,34 @@ async fn send_chat_message(
     app_handle: tauri::AppHandle,
     message: String, 
     session_id: Option<String>,
+    sessionId: Option<String>,
+    model: Option<String>,
     model_override: Option<String>
 ) -> Result<serde_json::Value, String> {
+    let s_id = session_id.or(sessionId);
+    let m_override = model_override.or(model);
     let params = json!({
         "message": message,
-        "session_id": session_id,
-        "model_override": model_override,
+        "session_id": s_id,
+        "model_override": m_override,
         "use_tags": true,
         "use_summaries": true,
         "request_id": Uuid::new_v4().to_string()
     });
     
     let result = send_json_rpc(&app_handle, "chat", params, None).await?;
-    
-    if result.get("content").is_some() || result.get("response").is_some() || result.get("reply").is_some() {
-        Ok(result)
-    } else {
-        Ok(result)
-    }
+    Ok(result)
 }
 
 #[tauri::command]
 async fn index_document(
     app_handle: tauri::AppHandle,
-    file_path: String
+    file_path: Option<String>,
+    filePath: Option<String>
 ) -> Result<serde_json::Value, String> {
+    let path = file_path.or(filePath).ok_or("file_path is required")?;
     let params = json!({
-        "file_path": file_path,
+        "file_path": path,
         "request_id": Uuid::new_v4().to_string()
     });
     

@@ -315,7 +315,7 @@ export default function ChatPanel() {
     const fileName = filePath.split(/[/\\]/).pop() || filePath;
     antdMessage.loading(`Indexing ${fileName} into ChromaDB vector memory...`, 0);
     try {
-      const result = await invoke<any>('index_document', { filePath });
+      const result = await invoke<any>('index_document', { filePath, file_path: filePath });
       antdMessage.destroy();
       if (result.status === 'success') {
         const newFile = {
@@ -396,6 +396,56 @@ export default function ChatPanel() {
   
   const scrollLogsToBottom = () => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const sendMessage = async () => {
+    if ((!input.trim() && attachedFiles.length === 0) || isLoading) return;
+    
+    const userMessage = input.trim();
+    setInput('');
+
+    // Append attached files context to the message payload if present
+    const currentAttachments = [...attachedFiles];
+    let payloadMessage = userMessage;
+
+    if (currentAttachments.length > 0) {
+      const fileNotes = currentAttachments.map(f => `[Attached File: ${f.name} | Path: ${f.path}]`).join('\n');
+      if (!userMessage) {
+        payloadMessage = `Attached files for context:\n${fileNotes}\n\nPlease analyze the attached file(s).`;
+      } else {
+        payloadMessage = `${userMessage}\n\n${fileNotes}`;
+      }
+    }
+
+    setMessages(prev => [...prev, {
+      role: 'user',
+      content: userMessage || (currentAttachments.length > 0 ? `[Attached ${currentAttachments.length} file(s)]` : ''),
+      attachments: currentAttachments
+    }]);
+    setIsLoading(true);
+    setAttachedFiles([]);
+
+    try {
+      const response = await invoke<any>('send_chat_message', {
+        sessionId: sessionId || 'default',
+        session_id: sessionId || 'default',
+        message: payloadMessage,
+        model: selectedModel === 'auto' ? null : selectedModel,
+        model_override: selectedModel === 'auto' ? null : selectedModel
+      });
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: response.content || response.reply || response.response || (typeof response === 'string' ? response : ''),
+        model_id: response.model_id || response.model_used
+      }]);
+      
+      await loadSessions();
+    } catch (error) {
+      antdMessage.error(`Error: ${error}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -570,44 +620,7 @@ export default function ChatPanel() {
     }
   };
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-    
-    const userMessage = input.trim();
-    setInput('');
 
-    // Append attached files context to the message payload if present
-    let payloadMessage = userMessage;
-    const currentAttachments = [...attachedFiles];
-    if (currentAttachments.length > 0) {
-      const fileNotes = currentAttachments.map(f => `[Attached File: ${f.name} | Path: ${f.path}]`).join('\n');
-      payloadMessage = `${userMessage}\n\n${fileNotes}`;
-    }
-
-    setMessages(prev => [...prev, { role: 'user', content: userMessage, attachments: currentAttachments }]);
-    setIsLoading(true);
-    setAttachedFiles([]);
-
-    try {
-      const response = await invoke<any>('send_chat_message', {
-        sessionId: sessionId || 'default',
-        message: payloadMessage,
-        model: selectedModel === 'auto' ? null : selectedModel
-      });
-
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: response.content || response.reply || response.response || (typeof response === 'string' ? response : ''),
-        model_id: response.model_id || response.model_used
-      }]);
-      
-      await loadSessions();
-    } catch (error) {
-      antdMessage.error(`Error: ${error}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleDeleteSession = async (sId: string, e: React.MouseEvent) => {
     e.stopPropagation();

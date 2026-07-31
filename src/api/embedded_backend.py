@@ -252,7 +252,7 @@ class EmbeddedBackend:
 
     def _handle_index_document(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Process a document and index its contents into ChromaDB vector store."""
-        file_path = params.get("file_path", "")
+        file_path = (params.get("file_path") or params.get("filePath") or "").strip()
         if not file_path or not os.path.exists(file_path):
             return {
                 "jsonrpc": "2.0",
