@@ -269,7 +269,14 @@ class SubAgentManager:
         max_tokens: int = 2500,
         file_paths: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        messages = [{"role": "system", "content": system_prompt}]
+        # Instruct the sub-agent that it has tool calling access
+        tool_system_instruction = (
+            f"{system_prompt}\n\n"
+            "[SYSTEM DIRECTIVE: You have direct access to system tools to find/search/read/write files, open directories, "
+            "run terminal commands, or search the web. Use these tools proactively as tool calls to gather workspace "
+            "context, inspect code, or verify facts. Use tools whenever necessary to perform your tasks.]"
+        )
+        messages = [{"role": "system", "content": tool_system_instruction}]
         for msg in context[-3:]:
             if msg.get("content"):
                 messages.append({"role": msg.get("role", "user"), "content": msg["content"]})
@@ -312,38 +319,99 @@ class SubAgentManager:
 
         messages.append({"role": "user", "content": user_content})
 
+        # Set up shared tool manager & tools schemas for sub-agents
+        from src.tools.basic_tools import ToolManager
+        tool_manager = ToolManager()
+        tools_schema = tool_manager.get_openai_tools_schema()
+
         fallback_model = "qwen/qwen3.5-flash-02-23"
-        try:
-            response = await self.provider_router.generate(
-                messages=messages,
-                model_id=model_id,
-                temperature=0.2,
-                max_tokens=max_tokens,
-            )
-            content = response.get("content", "").strip()
-        except Exception as e:
-            logger.error(f"Sub-agent [{role}|{model_id}] failed: {e}. Falling back to {fallback_model}.")
+        content = ""
+        tokens_used = 0
+        max_tool_turns = 5
+        turn = 0
+        active_model = model_id
+
+        # Execute generation & tool calls loop
+        while turn < max_tool_turns:
+            current_model = model_id if turn == 0 else active_model
             try:
                 response = await self.provider_router.generate(
                     messages=messages,
-                    model_id=fallback_model,
+                    model_id=current_model,
                     temperature=0.2,
                     max_tokens=max_tokens,
+                    tools=tools_schema if tools_schema else None
                 )
+                active_model = current_model
+            except Exception as e:
+                logger.error(f"Sub-agent [{role}|{current_model}] failed: {e}. Falling back to {fallback_model}.")
+                try:
+                    response = await self.provider_router.generate(
+                        messages=messages,
+                        model_id=fallback_model,
+                        temperature=0.2,
+                        max_tokens=max_tokens,
+                        tools=tools_schema if tools_schema else None
+                    )
+                    active_model = fallback_model
+                except Exception as fe:
+                    content = f"[Agent {role} failed: {fe}]"
+                    response = {"tokens_used": 0}
+                    break
+
+            tokens_used += response.get("tokens_used", 0)
+            
+            # Check for tool calls
+            tool_calls = response.get("tool_calls")
+            if not tool_calls:
                 content = response.get("content", "").strip()
-                model_id = fallback_model
-            except Exception as fe:
-                content = f"[Agent {role} failed: {fe}]"
-                response = {"tokens_used": 0}
+                break
+
+            # Append assistant message with tool calls
+            messages.append({
+                "role": "assistant",
+                "content": response.get("content") or "",
+                "tool_calls": tool_calls
+            })
+
+            # Print tool logs to UI via stderr
+            print(f"🤖 Sub-agent [{role}] invoking {len(tool_calls)} tools...", file=sys.stderr, flush=True)
+
+            for tc in tool_calls:
+                tc_id = tc.get("id")
+                tc_name = tc.get("function", {}).get("name")
+                
+                # Exclude recursive expert model delegation to prevent infinite sub-agent loops
+                if tc_name == "ask_expert_model":
+                    tool_res = {"success": False, "message": "Recursive expert model invocation is disabled for sub-agents."}
+                else:
+                    try:
+                        tc_args = json.loads(tc.get("function", {}).get("arguments", "{}"))
+                    except Exception:
+                        tc_args = {}
+                    
+                    # Print exact tool call logs for UI stream
+                    print(f"Sub-agent [{role}] Running Tool: {tc_name} with {tc_args}", file=sys.stderr, flush=True)
+                    tool_res = tool_manager.execute_tool(tc_name, tc_args)
+
+                # Append tool result to history
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "name": tc_name,
+                    "content": json.dumps(tool_res)
+                })
+
+            turn += 1
 
         # Stream live sub-agent output to UI via stderr
-        log_payload = json.dumps({"role": role, "model": model_id, "reply": content[:300]})
+        log_payload = json.dumps({"role": role, "model": active_model, "reply": content[:300]})
         print(f"SUB_AGENT_MSG:{log_payload}", file=sys.stderr, flush=True)
         print(f"✅ Sub-agent [{role}] completed.", file=sys.stderr, flush=True)
 
         return {
             "role": role,
-            "model_id": model_id,
+            "model_id": active_model,
             "content": content,
-            "tokens_used": response.get("tokens_used", 0),
+            "tokens_used": tokens_used,
         }

@@ -421,6 +421,13 @@ class BasicTools:
             # Load role system prompt from cached prompt files
             prompt_name = f"{role_key}_prompt"
             system_instruction = PromptLoader.get_prompt(prompt_name, f"You are the {role_key.upper()} sub-agent. Provide clear, direct, and concise output.")
+            
+            # Inject tools system directive:
+            system_instruction += (
+                "\n\n[SYSTEM DIRECTIVE: You have direct access to system tools to find/search/read/write files, open directories, "
+                "run terminal commands, or search the web. Use these tools proactively as tool calls to gather workspace "
+                "context, inspect code, or verify facts. Use tools whenever necessary to perform your tasks.]"
+            )
 
             messages = [
                 {"role": "system", "content": system_instruction},
@@ -432,8 +439,75 @@ class BasicTools:
             import concurrent.futures
             import asyncio
 
-            def _run_async_generate():
-                return asyncio.run(pr.generate(messages=messages, model_id=target_model, temperature=0.2, max_tokens=4000))
+            from src.tools.basic_tools import ToolManager
+            sub_tool_manager = ToolManager()
+            sub_tools_schema = sub_tool_manager.get_openai_tools_schema()
+
+            def _run_async_generate_loop():
+                loop_messages = list(messages)
+                loop_tokens = 0
+                max_turns = 5
+                turn_num = 0
+                final_content = ""
+                resolved_model = target_model
+
+                while turn_num < max_turns:
+                    try:
+                        res_item = asyncio.run(pr.generate(
+                            messages=loop_messages,
+                            model_id=resolved_model,
+                            temperature=0.2,
+                            max_tokens=4000,
+                            tools=sub_tools_schema if sub_tools_schema else None
+                        ))
+                    except Exception as e:
+                        # Fallback
+                        resolved_model = "openrouter:qwen/qwen3.5-flash-02-23"
+                        res_item = asyncio.run(pr.generate(
+                            messages=loop_messages,
+                            model_id=resolved_model,
+                            temperature=0.2,
+                            max_tokens=4000,
+                            tools=sub_tools_schema if sub_tools_schema else None
+                        ))
+
+                    loop_tokens += res_item.get("tokens_used", 0)
+                    t_calls = res_item.get("tool_calls")
+                    
+                    if not t_calls:
+                        final_content = res_item.get("content", "").strip()
+                        break
+
+                    loop_messages.append({
+                        "role": "assistant",
+                        "content": res_item.get("content") or "",
+                        "tool_calls": t_calls
+                    })
+
+                    for tc in t_calls:
+                        tc_id = tc.get("id")
+                        tc_name = tc.get("function", {}).get("name")
+                        
+                        # Prevent infinite sub-agent recursion loops
+                        if tc_name == "ask_expert_model":
+                            res_payload = {"success": False, "message": "Recursive expert model calls are disabled."}
+                        else:
+                            try:
+                                tc_args = json.loads(tc.get("function", {}).get("arguments", "{}"))
+                            except Exception:
+                                tc_args = {}
+                            res_payload = sub_tool_manager.execute_tool(tc_name, tc_args)
+
+                        loop_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "name": tc_name,
+                            "content": json.dumps(res_payload)
+                        })
+
+                    turn_num += 1
+
+                return {"content": final_content, "tokens_used": loop_tokens, "model": resolved_model}
 
             try:
                 loop = asyncio.get_running_loop()
@@ -442,15 +516,16 @@ class BasicTools:
 
             if loop and loop.is_running():
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(_run_async_generate)
-                    res = future.result()
+                    future = executor.submit(_run_async_generate_loop)
+                    res_outcome = future.result()
             else:
-                res = _run_async_generate()
+                res_outcome = _run_async_generate_loop()
 
-            if res.get("success", True) and res.get("content"):
+            target_model = res_outcome["model"]
+            if res_outcome.get("content"):
                 return {
                     "success": True,
-                    "result": res["content"],
+                    "result": res_outcome["content"],
                     "role": role_key,
                     "model": target_model,
                     "message": f"Role [{role_key.upper()}] ({target_model}) responded successfully"
@@ -458,10 +533,10 @@ class BasicTools:
 
             return {
                 "success": False,
-                "result": res.get("content", ""),
+                "result": "",
                 "role": role_key,
                 "model": target_model,
-                "message": res.get("error", f"No response generated by role {role_key}")
+                "message": f"No response generated by role {role_key}"
             }
             
         except Exception as e:
@@ -649,6 +724,70 @@ class BasicTools:
                 },
                 "returns": "Response from the expert sub-agent",
             },
+            "open_in_explorer": {
+                "description": "Open a directory or highlight a specific file in Windows File Explorer.",
+                "parameters": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative or absolute file/directory path to open",
+                        "required": True
+                    }
+                },
+                "returns": "Confirmation message"
+            },
+            "get_file_tree": {
+                "description": "Generate a recursive directory tree of the workspace to inspect files structure.",
+                "parameters": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Folder path to generate the tree for (optional, defaults to current)",
+                        "required": False
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "Maximum directory nesting depth (optional, default: 3)",
+                        "required": False
+                    }
+                },
+                "returns": "Text representation of file structure"
+            },
+            "find_files": {
+                "description": "Find files recursively matching a wildcard/glob pattern.",
+                "parameters": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to match e.g. '*.py' or 'index.*'",
+                        "required": True
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": "Folder path to search within (optional, defaults to current)",
+                        "required": False
+                    }
+                },
+                "returns": "List of matching file paths"
+            },
+            "grep_search": {
+                "description": "Search recursively for a query text keyword inside all workspace files.",
+                "parameters": {
+                    "query": {
+                        "type": "string",
+                        "description": "Text query keyword to find in files",
+                        "required": True
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": "Folder path to search within (optional, defaults to current)",
+                        "required": False
+                    },
+                    "file_pattern": {
+                        "type": "string",
+                        "description": "Optional glob pattern to filter target files e.g. '*.ts'",
+                        "required": False
+                    }
+                },
+                "returns": "List of line match dicts containing filename, line number, and content"
+            }
         }
         
         return {
@@ -665,6 +804,8 @@ class ToolManager:
     def __init__(self):
         # Disable permission prompts for the backend daemon to prevent hanging
         self.basic_tools = BasicTools(require_permission=False)
+        from src.tools.file_explorer_tool import FileExplorerTool
+        self.file_explorer = FileExplorerTool()
         self.tool_registry = self._register_tools()
     
     def _register_tools(self) -> Dict[str, Any]:
@@ -680,6 +821,10 @@ class ToolManager:
             "web_search": self.basic_tools.web_search,
             "fetch_webpage": self.basic_tools.fetch_webpage,
             "ask_expert_model": self.basic_tools.ask_expert_model,
+            "open_in_explorer": self.file_explorer.open_in_explorer,
+            "get_file_tree": self.file_explorer.get_file_tree,
+            "find_files": self.file_explorer.find_files,
+            "grep_search": self.file_explorer.grep_search,
         }
     
     def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
