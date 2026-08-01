@@ -927,9 +927,28 @@ class SQLiteMemoryStore:
         return [dict(row) for row in rows]
 
     def get_api_key_by_provider(self, provider: str) -> Optional[str]:
-        """Get active API key string for a specific provider."""
+        """Get active API key string for a specific provider. Checks all known aliases."""
         cursor = self.connection.cursor()
-        cursor.execute("SELECT key_value FROM api_keys WHERE provider = ? AND is_active = 1", (provider.lower(),))
+        p = provider.lower().strip()
+        # Build a set of aliases to check for this provider
+        alias_groups = [
+            {"mistral", "mistralai", "codestral"},
+            {"google", "gemini"},
+            {"anthropic", "claude"},
+            {"openai"},
+            {"groq"},
+            {"openrouter"},
+        ]
+        aliases = {p}
+        for group in alias_groups:
+            if p in group:
+                aliases = group
+                break
+        placeholders = ",".join("?" for _ in aliases)
+        cursor.execute(
+            f"SELECT key_value FROM api_keys WHERE provider IN ({placeholders}) AND is_active = 1 ORDER BY added_at DESC LIMIT 1",
+            tuple(aliases)
+        )
         row = cursor.fetchone()
         return row["key_value"] if row else None
 

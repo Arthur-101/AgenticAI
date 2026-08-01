@@ -136,12 +136,14 @@ class EmbeddedBackend:
     
     def _handle_health(self) -> Dict[str, Any]:
         """Handle health check."""
+        from src.memory.redis_store import redis_store
         return {
             "jsonrpc": "2.0",
             "result": {
                 "status": "healthy",
                 "router_initialized": True,
-                "service": "agenticai-embedded"
+                "service": "agenticai-embedded",
+                "redis_connected": redis_store.is_connected()
             },
             "id": None
         }

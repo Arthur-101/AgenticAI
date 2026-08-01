@@ -21,6 +21,7 @@ class RedisMemoryStore:
         self.pubsub = None
         self._listener_thread = None
         self._redis_process = None  # Tracks the auto-started Redis subprocess
+        self._auto_start_attempted = False
         self.connect()
 
     def _try_auto_start_redis(self) -> bool:
@@ -110,7 +111,7 @@ class RedisMemoryStore:
         
         # Try initial connection
         try:
-            self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2.0, protocol=2)
+            self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=1.0, protocol=2)
             self.client.ping()
             msg = "INFO: Connected to Redis memory store successfully."
             logger.info(msg)
@@ -119,30 +120,29 @@ class RedisMemoryStore:
         except Exception:
             pass
 
-        # Try auto-starting Redis
-        if self._try_auto_start_redis():
-            try:
-                self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=2.0, protocol=2)
-                self.client.ping()
-                msg = "INFO: Connected to Redis memory store after auto-start."
-                logger.info(msg)
-                print(msg, file=sys.stderr, flush=True)
-                return True
-            except Exception as e:
-                msg = f"WARNING: Redis auto-start completed, but ping failed (falling back to SQLite): {e}"
-                logger.warning(msg)
-                print(msg, file=sys.stderr, flush=True)
+        # Try auto-starting Redis only once
+        if not self._auto_start_attempted:
+            self._auto_start_attempted = True
+            if self._try_auto_start_redis():
+                try:
+                    self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=1.0, protocol=2)
+                    self.client.ping()
+                    msg = "INFO: Connected to Redis memory store after auto-start."
+                    logger.info(msg)
+                    print(msg, file=sys.stderr, flush=True)
+                    return True
+                except Exception as e:
+                    msg = f"WARNING: Redis auto-start completed, but ping failed (falling back to SQLite): {e}"
+                    logger.warning(msg)
+                    print(msg, file=sys.stderr, flush=True)
 
-        msg = "INFO: Redis connection unavailable (falling back to SQLite)."
-        logger.info(msg)
-        print(msg, file=sys.stderr, flush=True)
         self.client = None
         return False
 
     def is_connected(self) -> bool:
-        """Check if Redis connection is active."""
+        """Check if Redis connection is active, attempting fast reconnect if client is None."""
         if self.client is None:
-            return False
+            return self.connect()
         try:
             self.client.ping()
             return True

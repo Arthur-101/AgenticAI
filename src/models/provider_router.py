@@ -555,7 +555,7 @@ class ProviderRouter:
                 fmt_model = f"google/{target_model_name}"
             elif "claude" in t_lower and not t_lower.startswith("anthropic/"):
                 fmt_model = f"anthropic/{target_model_name}"
-            elif ("mistral" in t_lower or "codestral" in t_lower) and not t_lower.startswith("mistralai/"):
+            elif ("mistral" in t_lower or "codestral" in t_lower or "pixtral" in t_lower) and not t_lower.startswith("mistralai/"):
                 fmt_model = f"mistralai/{target_model_name}"
             elif "deepseek" in t_lower and not t_lower.startswith("deepseek/"):
                 fmt_model = f"deepseek/{target_model_name}"
@@ -717,7 +717,7 @@ class ProviderRouter:
             formatted_model = f"qwen/{clean_model}"
         elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
             formatted_model = f"anthropic/{clean_model}"
-        elif ("mistral" in model_lower or "codestral" in model_lower) and not model_lower.startswith("mistralai/"):
+        elif ("mistral" in model_lower or "codestral" in model_lower or "pixtral" in model_lower) and not model_lower.startswith("mistralai/"):
             formatted_model = f"mistralai/{clean_model}"
 
         from src.models.openrouter_client import Message
@@ -755,13 +755,22 @@ class ProviderRouter:
         max_tokens: int,
         tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """Direct HTTP call to OpenAI API."""
+        """Direct HTTP call to OpenAI API. Preserves image_url vision content blocks."""
         from src.models.openrouter_client import extract_text_content
         formatted_messages = []
         for m in messages:
+            raw_content = m.get("content")
+            # Preserve list content (vision blocks: image_url, text) — only stringify scalars
+            if isinstance(raw_content, list):
+                safe_content = [
+                    block if isinstance(block, dict) and block.get("type") in ("text", "image_url") else {"type": "text", "text": extract_text_content(block)}
+                    for block in raw_content
+                ]
+            else:
+                safe_content = extract_text_content(raw_content)
             msg_item = {
                 "role": m.get("role", "user"),
-                "content": extract_text_content(m.get("content"))
+                "content": safe_content
             }
             if m.get("tool_calls"):
                 msg_item["tool_calls"] = m.get("tool_calls")
@@ -813,26 +822,65 @@ class ProviderRouter:
         max_tokens: int,
         tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """Direct HTTP call to Google AI Studio Gemini REST API."""
+        """Direct HTTP call to Google AI Studio Gemini REST API. Supports vision/image_url content blocks."""
+        import base64 as _b64
         from src.models.openrouter_client import extract_text_content
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
         
         system_instruction_parts = []
         contents = []
-        
+
+        def _build_gemini_parts(content: Any) -> List[Dict[str, Any]]:
+            """Convert OpenAI-style content (str or list of blocks) to Gemini parts."""
+            if content is None:
+                return [{"text": ""}]
+            if isinstance(content, str):
+                return [{"text": content}]
+            if isinstance(content, list):
+                parts = []
+                for block in content:
+                    if isinstance(block, str):
+                        parts.append({"text": block})
+                    elif isinstance(block, dict):
+                        btype = block.get("type", "")
+                        if btype == "text":
+                            parts.append({"text": block.get("text", "")})
+                        elif btype == "image_url":
+                            img_url = block.get("image_url", {}).get("url", "")
+                            if img_url.startswith("data:"):
+                                # data:mime/type;base64,<data>
+                                try:
+                                    header, b64data = img_url.split(",", 1)
+                                    mime_type = header.split(":")[1].split(";")[0]
+                                    parts.append({
+                                        "inlineData": {"mimeType": mime_type, "data": b64data}
+                                    })
+                                except Exception:
+                                    parts.append({"text": f"[inline image]"})
+                            elif img_url.startswith("http"):
+                                parts.append({"fileData": {"mimeType": "image/jpeg", "fileUri": img_url}})
+                        elif btype in ("thinking",):
+                            txt = block.get("thinking", "")
+                            if txt:
+                                parts.append({"text": txt})
+                return parts if parts else [{"text": ""}]
+            return [{"text": str(content)}]
+
         for m in messages:
             role = m.get("role", "user")
-            txt = extract_text_content(m.get("content"))
+            raw_content = m.get("content")
             if role == "system":
+                txt = extract_text_content(raw_content)
                 if txt.strip():
                     system_instruction_parts.append({"text": txt})
             else:
                 g_role = "user" if role in ["user", "tool"] else "model"
-                # Merge with previous turn if same role to avoid Google API consecutive turn rejection
+                parts = _build_gemini_parts(raw_content)
+                # Merge with previous same-role turn to avoid consecutive-turn rejection
                 if contents and contents[-1]["role"] == g_role:
-                    contents[-1]["parts"][0]["text"] += f"\n\n{txt}"
+                    contents[-1]["parts"].extend(parts)
                 else:
-                    contents.append({"role": g_role, "parts": [{"text": txt}]})
+                    contents.append({"role": g_role, "parts": parts})
 
         if not contents:
             contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
@@ -850,13 +898,15 @@ class ProviderRouter:
             payload = json.dumps(payload_dict).encode("utf-8")
             req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
             loop = asyncio.get_event_loop()
-            res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=30.0))
+            res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=60.0))
             data = json.loads(res.read().decode("utf-8"))
             
             candidates = data.get("candidates", [{}])
-            content = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+            # Concatenate all text parts from the response
+            resp_parts = candidates[0].get("content", {}).get("parts", [{}])
+            content_text = " ".join(p.get("text", "") for p in resp_parts if p.get("text")).strip()
             tokens = data.get("usageMetadata", {}).get("totalTokenCount", 0)
-            return {"content": content, "model_id": f"google/{model_name}", "tokens_used": tokens, "success": True}
+            return {"content": content_text, "model_id": f"google/{model_name}", "tokens_used": tokens, "success": True}
         except urllib.error.HTTPError as http_err:
             err_body = http_err.read().decode("utf-8") if http_err.fp else str(http_err)
             logger.error(f"Google Direct API HTTP {http_err.code}: {err_body}")

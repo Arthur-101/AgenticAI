@@ -104,11 +104,18 @@ class ChatRouter:
             sub_manager = SubAgentManager(self.client)
             consensus = ConsensusAggregator(self.client)
             
-            has_media = any(tag in user_message for tag in ["[Attached Image:", "[Attached Media:"])
+            # Detect file attachments from [Attached File: name | Path: /path] tags
+            import re as _re
+            _file_tag_pattern = _re.compile(r'\[Attached File:[^|]+\|\s*Path:\s*([^\]]+)\]')
+            attached_paths = [m.strip() for m in _file_tag_pattern.findall(user_message)]
+            has_media = bool(attached_paths) or any(
+                tag in user_message for tag in ["[Attached Image:", "[Attached Media:", "[Attached File:"]
+            )
             sub_results = await sub_manager.run_collaborative_team(
                 user_message=user_message,
                 context=[{"role": m.role, "content": m.content} for m in context.assembled_messages],
-                has_multimodal_attachments=has_media
+                has_multimodal_attachments=has_media,
+                attached_file_paths=attached_paths,
             )
             
             aggregated = await consensus.synthesize_response(user_message, sub_results)
@@ -566,9 +573,11 @@ class ChatRouter:
                     
                     if name == "ask_expert_model":
                         # Send this specific sub-agent output to the UI
+                        role_name = tool_result.get("role", "sub_agent").upper()
+                        model_used = tool_result.get("model", "Expert Model")
                         log_msg = {
                             "content": f"**Task**: {arguments.get('prompt', '')}\n\n**Result**:\n{tool_result.get('result', '')}",
-                            "model": arguments.get('model_name', 'sub-agent')
+                            "model": f"{role_name} ({model_used})"
                         }
                         import sys
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)

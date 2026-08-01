@@ -124,6 +124,7 @@ class SubAgentManager:
         user_message: str,
         context: List[Dict[str, Any]],
         has_multimodal_attachments: bool = False,
+        attached_file_paths: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute a hub-and-spoke collaborative team run and return each agent's output.
@@ -147,7 +148,12 @@ class SubAgentManager:
         # ── Stage 1: Reasoning Agent + Multimodal (in parallel) ──────────────
         stage1_tasks = [self._run_reasoning_agent(user_message, context, team_intro)]
         if has_multimodal_attachments:
-            stage1_tasks.append(self._run_multimodal_agent(user_message, context, team_intro))
+            # Extract file paths from embedded [Attached File:] tags if not provided explicitly
+            file_paths = attached_file_paths or []
+            if not file_paths:
+                import re as _re
+                file_paths = [m.strip() for m in _re.findall(r'\[Attached File:[^|]+\|\s*Path:\s*([^\]]+)\]', user_message)]
+            stage1_tasks.append(self._run_multimodal_agent(user_message, context, team_intro, file_paths))
 
         stage1_outputs = await asyncio.gather(*stage1_tasks)
         reasoning_result = stage1_outputs[0]
@@ -195,12 +201,13 @@ class SubAgentManager:
         user_message: str,
         context: List[Dict[str, Any]],
         team_intro: str,
+        file_paths: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         card = AGENT_CARDS["multimodal"]
         base_prompt = PromptLoader.get_prompt("multimodal_prompt", "Analyze any attached files, images, or media referenced in the message.")
         system = f"{team_intro}\n\nYOUR ROLE: {card['name']}\n{base_prompt}"
         model_id = self._get_dynamic_model_for_role("multimodal")
-        return await self._call_agent("multimodal", model_id, system, user_message, context)
+        return await self._call_agent("multimodal", model_id, system, user_message, context, file_paths=file_paths)
 
     async def _run_coding_agent(
         self,
@@ -260,12 +267,50 @@ class SubAgentManager:
         user_message: str,
         context: List[Dict[str, Any]],
         max_tokens: int = 2500,
+        file_paths: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         messages = [{"role": "system", "content": system_prompt}]
         for msg in context[-3:]:
             if msg.get("content"):
                 messages.append({"role": msg.get("role", "user"), "content": msg["content"]})
-        messages.append({"role": "user", "content": user_message})
+
+        # Build user content — include base64 image blocks when file_paths are provided
+        user_content: Any = user_message
+        if file_paths:
+            import base64, mimetypes
+            from pathlib import Path
+            content_parts: List[Dict[str, Any]] = [{"type": "text", "text": user_message}]
+            for fp in file_paths:
+                try:
+                    p = Path(fp.strip())
+                    if not p.exists() or not p.is_file():
+                        content_parts[0]["text"] += f"\n[Note: attached file not found on disk: {fp}]"
+                        continue
+                    mime_type, _ = mimetypes.guess_type(str(p))
+                    mime_type = mime_type or "application/octet-stream"
+                    if mime_type.startswith("image/"):
+                        if p.stat().st_size < 20 * 1024 * 1024:  # 20 MB limit
+                            with open(p, "rb") as img_f:
+                                b64 = base64.b64encode(img_f.read()).decode("utf-8")
+                            content_parts.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime_type};base64,{b64}"}
+                            })
+                        else:
+                            content_parts[0]["text"] += f"\n[Image too large to embed: {p.name}]"
+                    else:
+                        # For non-image files, embed text content
+                        try:
+                            from src.processors.file_processor import FileProcessor
+                            text_content = FileProcessor.process_file(str(p))
+                            content_parts[0]["text"] += f"\n\n--- Contents of {p.name} ---\n{text_content}\n"
+                        except Exception as fe:
+                            content_parts[0]["text"] += f"\n[Could not read {p.name}: {fe}]"
+                except Exception as e:
+                    content_parts[0]["text"] += f"\n[Error processing attachment {fp}: {e}]"
+            user_content = content_parts if len(content_parts) > 1 else user_message
+
+        messages.append({"role": "user", "content": user_content})
 
         fallback_model = "qwen/qwen3.5-flash-02-23"
         try:

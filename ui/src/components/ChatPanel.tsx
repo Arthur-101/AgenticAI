@@ -437,7 +437,7 @@ export default function ChatPanel() {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: response.content || response.reply || response.response || (typeof response === 'string' ? response : ''),
-        model_id: response.model_id || response.model_used
+        model_id: response.model || response.model_id || response.model_used
       }]);
       
       await loadSessions();
@@ -482,10 +482,16 @@ export default function ChatPanel() {
         try {
           const jsonStr = event.payload.replace('SUB_AGENT_MSG:', '');
           const data = JSON.parse(jsonStr);
+          const roleUpper = data.role ? data.role.toUpperCase() : '';
+          const modelUsed = data.model || data.model_id || '';
+          const displayModel = roleUpper && modelUsed && !modelUsed.startsWith(roleUpper)
+            ? `${roleUpper} (${modelUsed})`
+            : modelUsed || roleUpper || 'sub-agent';
+
           setMessages(prev => [...prev, {
             role: 'sub_agent',
             content: data.content || data.content_raw || data.reply || data.response || jsonStr || '',
-            model_id: data.model || data.model_id
+            model_id: displayModel
           }]);
         } catch (e) {
           console.error("Failed to parse sub agent message", e);
@@ -566,6 +572,16 @@ export default function ChatPanel() {
         await invoke('start_backend');
         setBackendRunning(true);
         antdMessage.success('AI backend started');
+      }
+      
+      // Fetch detailed health status to retrieve current Redis status
+      try {
+        const health = await invoke<any>('get_backend_health');
+        if (health && health.redis_connected !== undefined) {
+          setRedisConnected(health.redis_connected);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch detailed backend health status:', err);
       }
       
       await loadSessions();
@@ -1455,7 +1471,7 @@ export default function ChatPanel() {
                                   ghost 
                                   items={[{
                                     key: '1',
-                                    label: <span style={{ fontSize: '12px', color: '#c084fc', fontWeight: 600 }}>View Sub-Agent Details ({msg.model_id || 'sub-agent'})</span>,
+                                    label: <span style={{ fontSize: '12px', color: '#c084fc', fontWeight: 600 }}>View Sub-Agent Details ({msg.model_id || 'Sub-Agent'})</span>,
                                     children: (
                                       <ReactMarkdown 
                                         remarkPlugins={[remarkGfm, remarkEmoji]}

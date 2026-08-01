@@ -293,6 +293,11 @@ async fn backend_status(app_handle: tauri::AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn get_backend_health(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    send_json_rpc(&app_handle, "health", json!({}), None).await
+}
+
+#[tauri::command]
 async fn get_all_sessions(app_handle: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
     let result = send_json_rpc(&app_handle, "get_sessions", json!({}), None).await?;
     
@@ -636,6 +641,7 @@ pub fn run() {
             get_chat_history,
             new_session,
             backend_status,
+            get_backend_health,
             get_all_sessions,
             delete_session,
             get_all_memories,
