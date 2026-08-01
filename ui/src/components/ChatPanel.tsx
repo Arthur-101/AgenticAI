@@ -1461,7 +1461,8 @@ export default function ChatPanel() {
                             overflowX: 'auto',
                             boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
                             fontSize: '14px',
-                            lineHeight: 1.5
+                            lineHeight: 1.5,
+                            whiteSpace: 'pre-wrap'
                           }}>
                             {(() => {
                               const messageText = msg.content || (msg as any).content_raw || (msg as any).reply || (msg as any).response || '';
@@ -1698,17 +1699,28 @@ export default function ChatPanel() {
                   disabled={!backendRunning || isLoading}
                 />
               </Tooltip>
-              <Input
+              <Input.TextArea
                 placeholder="Message AgenticAI..."
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onPressEnter={sendMessage}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if ((input.trim() || attachedFiles.length > 0) && !isLoading) {
+                      sendMessage();
+                    }
+                  }
+                }}
+                autoSize={{ minRows: 1, maxRows: 6 }}
                 style={{ 
                   flex: 1, 
                   background: 'rgba(255, 255, 255, 0.05)', 
                   border: '1px solid rgba(255, 255, 255, 0.1)', 
                   color: '#f8fafc',
-                  borderRadius: '8px'
+                  borderRadius: '8px',
+                  resize: 'none',
+                  paddingTop: '8px',
+                  paddingBottom: '8px'
                 }}
                 disabled={!backendRunning || isLoading}
               />
