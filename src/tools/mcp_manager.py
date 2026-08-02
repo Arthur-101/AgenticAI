@@ -209,7 +209,7 @@ class McpClient:
             self.log(f"Notification write error: {str(e)}")
 
     def _initialize_handshake(self) -> bool:
-        """Complete the formal Model Context Protocol initialization sequence."""
+        """Complete the formal Model Context Protocol initialization sequence (with high timeout for first-time npx installs)."""
         res = self._send_request("initialize", {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
@@ -217,17 +217,17 @@ class McpClient:
                 "name": "AgenticAI-Host",
                 "version": "1.0.0"
             }
-        })
+        }, timeout=120.0)
         if not res or "error" in res:
             self.log(f"Initialize rejected: {res}")
             return False
             
         self._send_notification("notifications/initialized")
         return True
-
+ 
     def _fetch_tools_catalog(self) -> List[Dict[str, Any]]:
         """Query the list of available tools from the server."""
-        res = self._send_request("tools/list", {})
+        res = self._send_request("tools/list", {}, timeout=30.0)
         if not res or "error" in res:
             self.log("Failed to load tools catalog")
             return []
