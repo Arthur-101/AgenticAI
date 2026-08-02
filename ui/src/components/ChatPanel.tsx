@@ -108,6 +108,7 @@ export default function ChatPanel() {
   // MCP Settings State Hooks
   const [mcpServers, setMcpServers] = useState<any[]>([]);
   const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
+  const [editingMcp, setEditingMcp] = useState<any | null>(null);
   const [selectedLogsServer, setSelectedLogsServer] = useState<string | null>(null);
   const [serverLogs, setServerLogs] = useState<string[]>([]);
   const [logsDrawerOpen, setLogsDrawerOpen] = useState(false);
@@ -163,9 +164,9 @@ export default function ChatPanel() {
     try {
       await invoke('save_model_note', { modelId, provider, isFavorite, notes });
       setTrackerData(prev => prev.map(m => m.model_id === modelId ? { ...m, is_favorite: isFavorite, notes } : m));
-      message.success('Model note updated!');
+      antdMessage.success('Model note updated!');
     } catch (err) {
-      message.error(`Failed to save model note: ${err}`);
+      antdMessage.error(`Failed to save model note: ${err}`);
     }
   };
 

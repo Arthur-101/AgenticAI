@@ -874,9 +874,34 @@ class ToolManager:
                     inner_tool_name = parts[2]
                     
                     from src.tools.mcp_manager import mcp_manager
-                    result = mcp_manager.execute_mcp_tool(server_name, inner_tool_name, parameters)
-                    result["tool_name"] = tool_name
-                    result["parameters"] = parameters
+                    raw_res = mcp_manager.execute_mcp_tool(server_name, inner_tool_name, parameters)
+                    
+                    # Normalize standard MCP response to match ToolManager's expected output format
+                    if isinstance(raw_res, dict) and "content" in raw_res:
+                        text_parts = []
+                        for item in raw_res.get("content", []):
+                            if item.get("type") == "text":
+                                text_parts.append(item.get("text", ""))
+                        
+                        message_str = "\n".join(text_parts)
+                        result = {
+                            "success": True,
+                            "result": raw_res,
+                            "message": message_str or "Tool executed successfully",
+                            "tool_name": tool_name,
+                            "parameters": parameters,
+                        }
+                    elif isinstance(raw_res, dict) and raw_res.get("success") is False:
+                        result = raw_res
+                        result["tool_name"] = tool_name
+                        result["parameters"] = parameters
+                    else:
+                        result = {
+                            "success": True,
+                            "result": raw_res,
+                            "tool_name": tool_name,
+                            "parameters": parameters,
+                        }
                     return result
                 else:
                     return {
