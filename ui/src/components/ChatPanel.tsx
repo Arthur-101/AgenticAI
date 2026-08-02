@@ -25,7 +25,9 @@ import {
   StarOutlined,
   StarFilled,
   SearchOutlined,
-  TableOutlined
+  TableOutlined,
+  ApiOutlined,
+  SyncOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
@@ -102,6 +104,20 @@ export default function ChatPanel() {
   }>>([]);
   const [trackerSearch, setTrackerSearch] = useState<string>('');
   const [isLoadingTracker, setIsLoadingTracker] = useState<boolean>(false);
+
+  // MCP Settings State Hooks
+  const [mcpServers, setMcpServers] = useState<any[]>([]);
+  const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
+  const [selectedLogsServer, setSelectedLogsServer] = useState<string | null>(null);
+  const [serverLogs, setServerLogs] = useState<string[]>([]);
+  const [logsDrawerOpen, setLogsDrawerOpen] = useState(false);
+  
+  // MCP Form Hooks
+  const [mcpName, setMcpName] = useState('');
+  const [mcpCommand, setMcpCommand] = useState('');
+  const [mcpArgsStr, setMcpArgsStr] = useState('');
+  const [mcpEnvStr, setMcpEnvStr] = useState('');
+  const [mcpEnabled, setMcpEnabled] = useState(true);
 
   const loadProviderModels = async (provider: string) => {
     try {
@@ -668,6 +684,7 @@ export default function ChatPanel() {
       loadApiKeys();
       loadMemories();
       loadTrackerData();
+      loadMcpServers();
     }
   }, [isSettingsOpen]);
 
@@ -705,6 +722,102 @@ export default function ChatPanel() {
     } catch (error) {
       antdMessage.error(`Failed to delete memory: ${error}`);
     }
+  };
+
+  const loadMcpServers = async () => {
+    try {
+      const res = await invoke<any[]>('get_mcp_servers');
+      setMcpServers(res || []);
+    } catch (error) {
+      console.error('Failed to load MCP servers:', error);
+    }
+  };
+
+  const handleAddMcpServer = async () => {
+    if (!mcpName.trim() || !mcpCommand.trim()) {
+      antdMessage.warning('Please enter a server name and command');
+      return;
+    }
+    
+    let parsedArgs: string[] = [];
+    if (mcpArgsStr.trim()) {
+      try {
+        parsedArgs = JSON.parse(mcpArgsStr.trim());
+        if (!Array.isArray(parsedArgs)) {
+          antdMessage.error('Arguments must be a valid JSON array of strings, e.g. ["-y", "pkg"]');
+          return;
+        }
+      } catch (e) {
+        antdMessage.error('Invalid arguments JSON array formatting, e.g. ["-y", "pkg"]');
+        return;
+      }
+    }
+
+    let parsedEnv: Record<string, string> = {};
+    if (mcpEnvStr.trim()) {
+      try {
+        parsedEnv = JSON.parse(mcpEnvStr.trim());
+        if (typeof parsedEnv !== 'object' || Array.isArray(parsedEnv)) {
+          antdMessage.error('Env variables must be a valid JSON object');
+          return;
+        }
+      } catch (e) {
+        antdMessage.error('Invalid environment variables JSON object formatting, e.g. {"KEY": "VALUE"}');
+        return;
+      }
+    }
+
+    try {
+      const success = await invoke<boolean>('add_mcp_server', {
+        name: mcpName.trim(),
+        command: mcpCommand.trim(),
+        args: parsedArgs,
+        env: parsedEnv,
+        enabled: mcpEnabled
+      });
+      if (success) {
+        antdMessage.success('MCP server configuration saved!');
+        setIsMcpModalOpen(false);
+        setEditingMcp(null);
+        resetMcpForm();
+        loadMcpServers();
+      } else {
+        antdMessage.error('Failed to save MCP server configuration');
+      }
+    } catch (error) {
+      antdMessage.error(`Error saving MCP server: ${error}`);
+    }
+  };
+
+  const handleDeleteMcpServer = async (name: string) => {
+    try {
+      const success = await invoke<boolean>('delete_mcp_server', { name });
+      if (success) {
+        antdMessage.success(`Deleted MCP server: ${name}`);
+        loadMcpServers();
+      } else {
+        antdMessage.error(`Failed to delete MCP server: ${name}`);
+      }
+    } catch (error) {
+      antdMessage.error(`Error deleting MCP server: ${error}`);
+    }
+  };
+
+  const loadMcpLogs = async (name: string) => {
+    try {
+      const logs = await invoke<string[]>('get_mcp_logs', { name });
+      setServerLogs(logs || []);
+    } catch (error) {
+      console.error(`Failed to fetch logs for ${name}:`, error);
+    }
+  };
+
+  const resetMcpForm = () => {
+    setMcpName('');
+    setMcpCommand('');
+    setMcpArgsStr('');
+    setMcpEnvStr('');
+    setMcpEnabled(true);
   };
 
   return (
@@ -1122,9 +1235,295 @@ export default function ChatPanel() {
                   />
                 </div>
               )
+            },
+            {
+              key: 'mcp',
+              label: <span><ApiOutlined /> MCP Servers</span>,
+              children: (
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
+                      Configure stdio-based Model Context Protocol (MCP) servers. Exposed tools are automatically namespaced under `mcp_[server]_[tool]` and available to both orchestrator and sub-agents.
+                    </Typography.Paragraph>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Button 
+                        size="small" 
+                        icon={<SyncOutlined />} 
+                        onClick={loadMcpServers}
+                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
+                      >
+                        Refresh
+                      </Button>
+                      <Button 
+                        type="primary" 
+                        size="small" 
+                        icon={<PlusOutlined />} 
+                        onClick={() => { resetMcpForm(); setEditingMcp(null); setIsMcpModalOpen(true); }}
+                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
+                      >
+                        Add Server
+                      </Button>
+                    </div>
+                  </div>
+
+                  <List
+                    dataSource={mcpServers}
+                    locale={{ emptyText: 'No MCP servers configured. Add one to extend your agent capabilities!' }}
+                    renderItem={server => {
+                      const envKeys = Object.keys(server.env || {});
+                      return (
+                        <Card
+                          size="small"
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            borderColor: 'rgba(255, 255, 255, 0.08)',
+                            marginBottom: '12px'
+                          }}
+                          title={
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: '#38bdf8', fontWeight: 600 }}>{server.name}</span>
+                                <Tag color={server.status === 'Active' ? 'success' : server.status === 'Error' ? 'error' : 'default'} style={{ margin: 0, fontSize: '11px' }}>
+                                  ● {server.status}
+                                </Tag>
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <Button 
+                                  size="small"
+                                  icon={<FileTextOutlined />}
+                                  onClick={() => {
+                                    setSelectedLogsServer(server.name);
+                                    loadMcpLogs(server.name);
+                                    setLogsDrawerOpen(true);
+                                  }}
+                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#f8fafc', borderColor: 'rgba(255,255,255,0.1)' }}
+                                >
+                                  Logs
+                                </Button>
+                                <Button
+                                  size="small"
+                                  icon={<EditOutlined />}
+                                  onClick={() => {
+                                    setEditingMcp(server);
+                                    setMcpName(server.name);
+                                    setMcpCommand(server.command);
+                                    setMcpArgsStr(JSON.stringify(server.args));
+                                    setMcpEnvStr(JSON.stringify(server.env, null, 2));
+                                    setMcpEnabled(server.enabled);
+                                    setIsMcpModalOpen(true);
+                                  }}
+                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', borderColor: 'rgba(255,255,255,0.1)' }}
+                                >
+                                  Edit
+                                </Button>
+                                <Popconfirm
+                                  title="Delete this MCP server configuration?"
+                                  onConfirm={() => handleDeleteMcpServer(server.name)}
+                                  okText="Delete"
+                                  cancelText="Cancel"
+                                >
+                                  <Button size="small" icon={<DeleteOutlined />} danger>
+                                    Delete
+                                  </Button>
+                                </Popconfirm>
+                              </div>
+                            </div>
+                          }
+                        >
+                          <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
+                            <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '6px' }}>Command:</span>
+                            <span style={{ fontFamily: 'monospace', background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
+                              {server.command} {server.args.join(' ')}
+                            </span>
+                          </div>
+
+                          {envKeys.length > 0 && (
+                            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                              <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '4px' }}>Env Keys:</span>
+                              {envKeys.map(k => <Tag key={k} color="blue" style={{ fontSize: '10px', margin: 0 }}>{k}</Tag>)}
+                            </div>
+                          )}
+
+                          {server.error_message && (
+                            <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 10px', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace', marginBottom: '12px' }}>
+                              Error: {server.error_message}
+                            </div>
+                          )}
+
+                          {server.status === 'Active' && server.tools.length > 0 ? (
+                            <Collapse
+                              size="small"
+                              style={{ background: 'rgba(0,0,0,0.2)', border: 'none' }}
+                              ghost
+                              items={[
+                                {
+                                  key: 'tools',
+                                  label: <span style={{ color: '#cbd5e1', fontSize: '12px' }}>🛠️ Discovered Tools ({server.tools.length})</span>,
+                                  children: (
+                                    <List
+                                      size="small"
+                                      dataSource={server.tools}
+                                      renderItem={(tool: any) => (
+                                        <List.Item style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                          <div style={{ width: '100%' }}>
+                                            <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+                                              mcp_{server.name}_{tool.name}
+                                            </Tag>
+                                            <span style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                                              {tool.description}
+                                            </span>
+                                          </div>
+                                        </List.Item>
+                                      )}
+                                    />
+                                  )
+                                }
+                              ]}
+                            />
+                          ) : (
+                            <div style={{ color: '#64748b', fontSize: '11px' }}>
+                              {server.status === 'Active' ? 'No tools exposed by this server.' : 'Exposed tools will be listed here when active.'}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    }}
+                  />
+                </div>
+              )
             }
           ]}
         />
+      </Modal>
+
+      {/* Add / Edit MCP Server Modal */}
+      <Modal
+        title={editingMcp ? "Edit MCP Server" : "Add MCP Server"}
+        open={isMcpModalOpen}
+        onOk={handleAddMcpServer}
+        onCancel={() => { setIsMcpModalOpen(false); setEditingMcp(null); resetMcpForm(); }}
+        okText="Save Config"
+        width={540}
+        styles={{
+          mask: { backdropFilter: 'blur(4px)', background: 'rgba(0, 0, 0, 0.6)' },
+          body: { background: '#0f172a', color: '#f8fafc', padding: '16px 20px' },
+          header: { background: 'transparent', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Server Name</Typography.Text>
+            <Input 
+              placeholder="e.g. notion" 
+              value={mcpName} 
+              onChange={e => setMcpName(e.target.value)} 
+              disabled={!!editingMcp}
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Execution Command</Typography.Text>
+            <Input 
+              placeholder="e.g. npx, uvx, python" 
+              value={mcpCommand} 
+              onChange={e => setMcpCommand(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Arguments (JSON Array)</Typography.Text>
+            <Input.TextArea 
+              rows={2}
+              placeholder='e.g. ["-y", "@modelcontextprotocol/server-notion"]' 
+              value={mcpArgsStr} 
+              onChange={e => setMcpArgsStr(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155', fontFamily: 'monospace' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Environment Variables (JSON Object)</Typography.Text>
+            <Input.TextArea 
+              rows={4}
+              placeholder='e.g. {&#10;  "NOTION_API_KEY": "secret_..."&#10;}' 
+              value={mcpEnvStr} 
+              onChange={e => setMcpEnvStr(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155', fontFamily: 'monospace' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input 
+              type="checkbox" 
+              id="mcp_enabled_checkbox" 
+              checked={mcpEnabled} 
+              onChange={e => setMcpEnabled(e.target.checked)} 
+              style={{ accentColor: '#38bdf8' }}
+            />
+            <label htmlFor="mcp_enabled_checkbox" style={{ color: '#cbd5e1', fontSize: '13px', cursor: 'pointer' }}>
+              Enable server process instantly on save
+            </label>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MCP Logs Drawer Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginRight: '24px' }}>
+            <span style={{ color: '#f8fafc' }}>🔌 Logs for '{selectedLogsServer}'</span>
+            <Button 
+              size="small" 
+              icon={<SyncOutlined />} 
+              onClick={() => selectedLogsServer && loadMcpLogs(selectedLogsServer)}
+              style={{ background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', borderColor: 'rgba(255,255,255,0.1)' }}
+            >
+              Reload
+            </Button>
+          </div>
+        }
+        open={logsDrawerOpen}
+        onCancel={() => setLogsDrawerOpen(false)}
+        footer={null}
+        width={720}
+        styles={{
+          mask: { backdropFilter: 'blur(2px)', background: 'rgba(0, 0, 0, 0.5)' },
+          body: { background: '#090d16', color: '#f8fafc', padding: '12px' }
+        }}
+      >
+        <div 
+          style={{ 
+            height: '420px', 
+            overflowY: 'auto', 
+            background: '#020617', 
+            padding: '12px', 
+            borderRadius: '6px', 
+            fontFamily: 'monospace', 
+            fontSize: '11px',
+            lineHeight: '1.5',
+            color: '#38bdf8',
+            border: '1px solid rgba(255,255,255,0.05)'
+          }}
+        >
+          {serverLogs.length === 0 ? (
+            <div style={{ color: '#64748b' }}>No logs generated yet.</div>
+          ) : (
+            serverLogs.map((log, idx) => (
+              <div key={idx} style={{ 
+                color: log.includes('ERR:') ? '#ef4444' : log.includes('OUT:') ? '#10b981' : '#38bdf8', 
+                borderBottom: '1px solid rgba(255,255,255,0.02)',
+                paddingBottom: '4px',
+                marginBottom: '4px',
+                wordBreak: 'break-all',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {log}
+              </div>
+            ))
+          )}
+        </div>
       </Modal>
 
       {/* Upload Modal */}

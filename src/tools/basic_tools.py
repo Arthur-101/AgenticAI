@@ -789,6 +789,42 @@ class BasicTools:
                 "returns": "List of line match dicts containing filename, line number, and content"
             }
         }
+
+        # Fetch tools dynamically from active MCP servers
+        try:
+            from src.tools.mcp_manager import mcp_manager
+            for server in mcp_manager.get_all_servers():
+                if server["status"] == "Active":
+                    srv_name = server["name"]
+                    for tool in server["tools"]:
+                        t_name = tool["name"]
+                        namespaced_name = f"mcp_{srv_name}_{t_name}"
+                        
+                        # Translate MCP properties/parameters schema to match ToolManager format
+                        input_schema = tool.get("inputSchema", {})
+                        properties = input_schema.get("properties", {})
+                        required_list = input_schema.get("required", [])
+                        
+                        parameters_dict = {}
+                        for prop_name, prop_data in properties.items():
+                            parameters_dict[prop_name] = {
+                                "type": prop_data.get("type", "string"),
+                                "description": prop_data.get("description", ""),
+                                "required": prop_name in required_list
+                            }
+                            # Check for arrays to support strict Gemini validation rules (missing items schema fix)
+                            if prop_data.get("type") == "array" and "items" not in prop_data:
+                                parameters_dict[prop_name]["items"] = {"type": "string"}
+                            elif "items" in prop_data:
+                                parameters_dict[prop_name]["items"] = prop_data["items"]
+                        
+                        tools[namespaced_name] = {
+                            "description": f"[MCP: {srv_name}] {tool.get('description', '')}",
+                            "parameters": parameters_dict,
+                            "returns": "MCP server response payload"
+                        }
+        except Exception as e:
+            logger.error(f"Error reading dynamic MCP tools in BasicTools: {e}")
         
         return {
             "success": True,
@@ -828,7 +864,37 @@ class ToolManager:
         }
     
     def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a tool by name with parameters."""
+        """Execute a tool by name with parameters (intercepts namespaced MCP tools)."""
+        if tool_name.startswith("mcp_"):
+            try:
+                # Expected format: mcp_[server_name]_[tool_name]
+                parts = tool_name.split("_", 2)
+                if len(parts) >= 3:
+                    server_name = parts[1]
+                    inner_tool_name = parts[2]
+                    
+                    from src.tools.mcp_manager import mcp_manager
+                    result = mcp_manager.execute_mcp_tool(server_name, inner_tool_name, parameters)
+                    result["tool_name"] = tool_name
+                    result["parameters"] = parameters
+                    return result
+                else:
+                    return {
+                        "success": False,
+                        "result": None,
+                        "message": f"Malformed MCP tool name format: {tool_name}",
+                        "tool_name": tool_name,
+                        "parameters": parameters,
+                    }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "result": None,
+                    "message": f"Failed executing MCP tool: {str(e)}",
+                    "tool_name": tool_name,
+                    "parameters": parameters,
+                }
+
         if tool_name not in self.tool_registry:
             return {
                 "success": False,

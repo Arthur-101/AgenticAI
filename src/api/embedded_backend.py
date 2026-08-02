@@ -92,6 +92,14 @@ class EmbeddedBackend:
                 return await self._handle_get_model_tracker_data()
             elif method == "save_model_note":
                 return self._handle_save_model_note(params)
+            elif method == "get_mcp_servers":
+                return self._handle_get_mcp_servers()
+            elif method == "add_mcp_server":
+                return self._handle_add_mcp_server(params)
+            elif method == "delete_mcp_server":
+                return self._handle_delete_mcp_server(params)
+            elif method == "get_mcp_logs":
+                return self._handle_get_mcp_logs(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -520,6 +528,101 @@ class EmbeddedBackend:
             "result": {"success": success, "model_id": model_id, "is_favorite": bool(is_favorite), "notes": notes},
             "id": params.get("request_id")
         }
+
+    def _handle_get_mcp_servers(self) -> Dict[str, Any]:
+        """Fetch all configured MCP servers with status and tools metadata."""
+        from src.tools.mcp_manager import mcp_manager
+        try:
+            servers = mcp_manager.get_all_servers()
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": True, "servers": servers},
+                "id": None
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": None
+            }
+
+    def _handle_add_mcp_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add or update an MCP server configuration."""
+        from src.tools.mcp_manager import mcp_manager
+        try:
+            name = params.get("name", "").strip()
+            command = params.get("command", "").strip()
+            args = params.get("args", [])
+            env = params.get("env", {})
+            enabled = params.get("enabled", True)
+            
+            if not name or not command:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32602, "message": "Server name and command are required"},
+                    "id": params.get("request_id")
+                }
+                
+            success = mcp_manager.add_server(name, command, args, env, enabled)
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": success},
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
+
+    def _handle_delete_mcp_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Delete an MCP server config and terminate running client process."""
+        from src.tools.mcp_manager import mcp_manager
+        try:
+            name = params.get("name", "").strip()
+            if not name:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32602, "message": "Server name is required"},
+                    "id": params.get("request_id")
+                }
+            success = mcp_manager.delete_server(name)
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": success},
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
+
+    def _handle_get_mcp_logs(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Retrieve circular buffer logs for a specific MCP server."""
+        from src.tools.mcp_manager import mcp_manager
+        try:
+            name = params.get("name", "").strip()
+            if not name:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32602, "message": "Server name is required"},
+                    "id": params.get("request_id")
+                }
+            logs = mcp_manager.get_logs(name)
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": True, "logs": logs},
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
 
 
 async def main_async():

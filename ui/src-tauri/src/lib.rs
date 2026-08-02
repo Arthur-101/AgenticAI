@@ -388,6 +388,57 @@ async fn delete_memory(
 }
 
 #[tauri::command]
+async fn get_mcp_servers(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let result = send_json_rpc(&app_handle, "get_mcp_servers", json!({}), None).await?;
+    result.get("servers").cloned().ok_or_else(|| "Failed to fetch MCP servers".to_string())
+}
+
+#[tauri::command]
+async fn add_mcp_server(
+    app_handle: tauri::AppHandle,
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: serde_json::Value,
+    enabled: bool,
+) -> Result<bool, String> {
+    let params = json!({
+        "name": name,
+        "command": command,
+        "args": args,
+        "env": env,
+        "enabled": enabled,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "add_mcp_server", params, None).await?;
+    Ok(result.get("success").and_then(|v| v.as_bool()).unwrap_or(false))
+}
+
+#[tauri::command]
+async fn delete_mcp_server(app_handle: tauri::AppHandle, name: String) -> Result<bool, String> {
+    let params = json!({
+        "name": name,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "delete_mcp_server", params, None).await?;
+    Ok(result.get("success").and_then(|v| v.as_bool()).unwrap_or(false))
+}
+
+#[tauri::command]
+async fn get_mcp_logs(app_handle: tauri::AppHandle, name: String) -> Result<Vec<String>, String> {
+    let params = json!({
+        "name": name,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "get_mcp_logs", params, None).await?;
+    let logs = result.get("logs")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_else(Vec::new);
+    Ok(logs)
+}
+
+#[tauri::command]
 async fn get_available_models(app_handle: tauri::AppHandle, provider: String) -> Result<serde_json::Value, String> {
     let params = json!({ "provider": provider });
     let result = send_json_rpc(&app_handle, "get_available_models", params, None).await?;
@@ -658,6 +709,10 @@ pub fn run() {
             test_api_key,
             get_model_tracker_data,
             save_model_note,
+            get_mcp_servers,
+            add_mcp_server,
+            delete_mcp_server,
+            get_mcp_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
