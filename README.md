@@ -1,198 +1,199 @@
-# AgenticAI
+# 🚀 AgenticAI
 
-Multi-model AI agent system using OpenRouter APIs with MCP-style architecture. Routes tasks to specialized models instead of relying on a single model.
+AgenticAI is a professional-grade, multi-model AI agent system built on a modular Model Context Protocol (MCP) style architecture. Rather than relying on a single large language model for all tasks, AgenticAI dynamically orchestrates, selects, and routes tasks to specialized models optimized for speed, cost, reasoning, or multimodal capabilities. 
 
-## Features
+Featuring a modern React + Ant Design dark glassmorphic UI wrapped in a native Windows Tauri system tray application, the system incorporates real-time multi-process synchronization, a robust shared memory layer, local MCP tool hosts, and multi-agent consensus pipelines.
 
-- **Multi-model routing**: Intelligently routes tasks to specialized models
-- **Cost optimization**: Uses cheaper models for simple tasks, expensive ones for complex tasks
-- **Memory system**: SQLite stores raw conversation turns; compressed summaries (≤ 400 tokens) are stored separately; ChromaDB for RAG.
-- **Summarization**: Uses free `gpt-oss-120b` to compact user and model responses.
-- **Smart tags**: Automatic tag extraction enables context retrieval based on related topics.
-- **Tool execution**: Managed tool execution with permission prompts
-- **Cost tracking**: Monitors usage and provides warnings
-- **Windows background service**: Runs as system tray app via Tauri (Phase 2)
-- **File processing**: Supports .py, PDF, TXT files
-- **UI Chat Interface**: Modern React + Ant Design interface with glass theme, chat history, summarization, and smart tags
+---
 
-## Model Architecture
+## 🔑 Core Features
 
-1. **Main Controller** (cheap, always running): qwen3.6-plus
-2. **Cheap Fast Model** (small tasks): gemini-2.5-flash-lite
-3. **Planner/Reasoning Layer** (complex tasks): deepseek-v4-pro / mimo-v2.5-pro
-4. **Coding/Execution Model**: deepseek-v4-flash
-5. **Multimodal Layer** (rare use): gemini-2.5-flash-lite
-- **Default chat model** configurable via env `AGENTICAI_DEFAULT_CHAT_MODEL` (defaults to `gemini-2.5-flash-lite`)
-- **System prompt** configurable via env `AGENTICAI_SYSTEM_PROMPT`
+- **Intelligent Heterogeneous Routing**: Automatically determines task complexity and routes sub-tasks to optimized models (Qwen, Gemini, DeepSeek, or Mimo) or lets users dynamically configure distinct models for specific workflow roles.
+- **Tauri Desktop UI & Windows Tray Integration**: A sleek React-based front-end with an advanced glassmorphism theme that minimizes to the Windows System Tray, featuring left-click toggle visibility and native context menu commands.
+- **Zero-Install Portable Redis Memory Sync**: Automatically spawns and manages a bundled portable Redis server on start for multi-process distributed locks, active session caching, and Pub/Sub communication with automatic SQLite fallbacks.
+- **Smart Facts Curation & Consolidation**: Uses conversational history to automatically extract enduring facts, user preferences, and system specs. Synthesizes updates using a deterministic `UPDATE`, `ADD`, or `SKIP` evaluation loop, persisting memory in SQLite and indexing it in ChromaDB for high-accuracy RAG.
+- **Multi-Model Team Collaboration & Consensus Aggregator**: Parallelized team reasoning using `SubAgentManager` (spawning specialized experts in coding, planning, and vision) combined with a `ConsensusAggregator` to resolve contradictions and output a unified master response.
+- **Local MCP Client Host**: Thread-safe host architecture that loads `data/mcp_config.json`, manages stdio-based MCP servers (e.g., Tavily, Spotify) as background subprocesses, exposes them dynamically, and streams logs to the UI settings drawer.
+- **Multi-Format Attachment Processor & Image Lightbox**: Gemini/ChatGPT-style attachment manager that processes PDFs, Code, Log files, and Images (rendering them as base64 in the UI and routing them natively via provider-level vision APIs like Gemini and OpenAI).
+- **Stateful Terminal Manager**: Migrated to `pywinpty` on Windows, featuring an ANSI-escape code cleaning filter to support persistent shell interactions with the host system safely.
+- **Direct Provider REST APIs**: Leverages native, zero-quota REST dispatchers for Google AI Studio, Anthropic, OpenAI, Groq, and Mistral AI, with a automatic failover fallback to OpenRouter.
 
-## Installation
+---
 
-1. Clone the repository:
+## 📐 System Architecture
+
+### Pipeline Flow
+
+```
+                     ┌──────────────────┐
+                     │    User Input    │
+                     └────────┬─────────┘
+                              │
+                              ▼
+                     ┌──────────────────┐
+                     │   Orchestrator   │
+                     └────────┬─────────┘
+                              │ (Decomposes & Selects)
+                              ▼
+             ┌────────────────┼────────────────┐
+             │                │                │
+             ▼                ▼                ▼
+      ┌────────────┐   ┌────────────┐   ┌────────────┐
+      │ Sub-Agent  │   │ Sub-Agent  │   │ Local MCP  │
+      │  (Coding)  │   │(Reasoning) │   │   Tools    │
+      └──────┬─────┘   └─────┬──────┘   └─────┬──────┘
+             │                │                │
+             └────────────────┼────────────────┘
+                              │ (Submits Proposals)
+                              ▼
+                     ┌──────────────────┐
+                     │    Synthesizer   │
+                     └────────┬─────────┘
+                              │ (Consensus Analysis)
+                              ▼
+                     ┌──────────────────┐
+                     │   Final Output   │
+                     └──────────────────┘
+```
+
+### Dedicated Model Roles
+
+You can map any friendly model id from OpenRouter, Google AI Studio, OpenAI, Anthropic, Groq, or Mistral AI to the following roles:
+
+| Role | Default Model | Primary Responsibility |
+| :--- | :--- | :--- |
+| **Orchestrator** | `qwen/qwen3.5-flash-02-23` | Session supervisor, intent classifier, and router. |
+| **Cheap Fast Model** | `google/gemini-2.5-flash-lite` | Simple chats, standard inquiries, text-only queries. |
+| **Reasoning Engine** | `deepseek/deepseek-v4-pro` | Complex algorithmic design, planning, math, and workflows. |
+| **Coding Specialist** | `deepseek/deepseek-v4-flash` | Code generation, debugging, refactoring, and AST scanning. |
+| **Multimodal Processor** | `google/gemini-2.5-flash-lite` | Image inspection, video parsing, PDF scanning, and audio OCR. |
+| **Memory / Summarizer** | `openai/gpt-oss-120b` | Fact extraction, database pruning, context summarization. |
+| **Speech-to-Text (STT)**| `whisper-1` | Micro-button voice dictation to chat box. |
+| **Text-to-Speech (TTS)**| `tts-1` | Speech synthesis voice response. |
+
+---
+
+## 📁 Repository Structure
+
+```
+AgenticAI/
+├── src/
+│   ├── api/             # FastAPI endpoints & WebSocket communication
+│   ├── controller/      # Model routers, prompt templates & context assembly
+│   ├── models/          # Direct HTTP client wrappers & OpenRouter bindings
+│   ├── memory/          # SQLite stores, ChromaDB indexes, & Redis sync
+│   ├── processors/      # Image base64 generators & file parsing utilities
+│   ├── tools/           # Terminal manager, file explorer, & MCP hosts
+│   ├── aggregators/     # Sub-agent managers & consensus combiners
+│   └── utils/           # Configuration managers and cost trackers
+├── ui/
+│   ├── src-tauri/       # Tauri configuration & Rust window-tray IPC handles
+│   └── src/             # React + Ant Design glassmorphic UI components
+├── bin/
+│   └── redis/           # Portable pre-compiled Redis binaries
+└── data/
+    ├── sqlite/          # Main SQLite storage files
+    ├── chroma/          # Vector embeddings index databases
+    └── documents/       # Local cached documents & media files
+```
+
+---
+
+## ⚡ Getting Started
+
+### Prerequisites
+
+- **Python 3.9+**
+- **Node.js v18+** & **npm**
+- **Cargo / Rust** (Only required if compilation of Tauri binaries is needed)
+
+### 1. Installation
+
+Clone this repository and set up a virtual environment:
+
 ```bash
 git clone <repository-url>
 cd AgenticAI
-```
 
-2. Install Python dependencies:
-```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install Python backend packages
 pip install -r requirements.txt
 ```
 
-3. Install UI dependencies (requires Node.js):
+Navigate to the `ui` directory and install front-end dependencies:
+
 ```bash
 cd ui
 npm install
 ```
 
-4. Create `.env` file from `.env.example`:
+### 2. Configuration Setup
+
+Copy the example environment template and configure your API keys:
+
 ```bash
 cp .env.example .env
 ```
 
-5. Edit `.env` and add your OpenRouter API key:
+Open `.env` and fill in the target variables:
 ```env
-OPENROUTER_API_KEY=your_openrouter_api_key_here
+# OpenRouter Configuration
+OPENROUTER_API_KEY=your_key_here
+
+# Direct API Provider keys (Optional, fallback to OpenRouter if not set)
+GEMINI_API_KEY=your_google_studio_key_here
+OPENAI_API_KEY=your_openai_key_here
+ANTHROPIC_API_KEY=your_anthropic_key_here
+GROQ_API_KEY=your_groq_key_here
+MISTRAL_API_KEY=your_mistral_key_here
+
+# Local Database Configuration
+SQLITE_DB_PATH=data/agenticai.db
+CHROMA_DB_PATH=data/chroma
 ```
 
-## Usage
+---
 
-### CLI Interface
+## 🖥️ Running the System
 
-Start interactive chat:
+You can run AgenticAI in CLI mode, start the JSON-RPC backend directly, or launch the Tauri Desktop UI wrapper.
+
+### CLI Mode
+
+To interact directly from the terminal:
+
 ```bash
+# Start an interactive CLI chat
 python main.py chat
-```
 
-Send a single message:
-```bash
-python main.py chat -m "Hello, how are you?"
-```
+# Show system statistics and costs
+python main.py stats
 
-Force specific model:
-```bash
-python main.py chat -m "Write Python code to sort a list" -M deepseek
-```
-
-List available models:
-```bash
+# List available models
 python main.py models
-```
 
-Show conversation history:
-```bash
+# Show conversation history
 python main.py history
 ```
 
-Show system statistics:
-```bash
-python main.py stats
-```
+### Desktop UI Mode (Tauri)
 
-### UI Interface (Tauri)
+To launch the desktop interface:
 
-Start the desktop application:
 ```bash
 cd ui
 npm run tauri dev
 ```
 
-This will launch the AgenticAI chat interface with:
-- Modern glass-themed UI using Ant Design
-- Chat history with summarization
-- Smart tag-based context retrieval
-- Start/stop backend controls
-- Session management
+This starts the Ant Design dark glassmorphic window, boots the dynamic Python backend, spins up the portable Redis database, and creates a system tray icon `🟢 AgenticAI` on Windows.
 
-### Interactive Mode Commands
+---
 
-When in interactive chat mode:
-- Type `exit`, `quit`, or `bye` to exit
-- Type `clear` or `reset` to start new session
-- Type `stats` to show session statistics
+## 🛠️ Security and Cost Management
 
-## Project Structure
-
-```
-src/
-├── controller/        # Model routing logic
-├── models/           # OpenRouter client wrappers
-├── memory/           # SQLite + ChromaDB memory
-├── tools/            # Tool definitions & execution
-├── processors/       # File processing
-├── aggregators/      # Multi-model output combination
-└── utils/           # Shared utilities
-
-ui/                   # Tauri UI (Phase 2)
-data/                 # Database and document storage
-```
-
-## Phased Development
-
-### Phase 1 (Current): Core CLI
-- [x] Model routing system
-- [x] OpenRouter client
-- [x] SQLite memory store
-- [x] Basic CLI interface
-- [x] Cost tracking
-- [x] Basic tool execution
-
-### Phase 2: Background Service + UI
-- [x] Tauri system tray app (deferred - will implement in Phase 3)
-- [x] Windows background service via Tauri
-- [x] Hotkey support (basic window focus)
-- [x] UI Chat page (start/stop agent, history view, summarization, smart tags)
-- [x] File processing (.py, PDF, TXT) (small files direct, large via RAG)
-- [x] ChromaDB integration (Vector DB for RAG memory)
-
-### Phase 3: Advanced Features
-- [x] Intelligent Routing & Complexity Engine (0-13+ score)
-- [x] Tool execution framework (MCP-style)
-- [x] Advanced memory (Redis)
-- [ ] Shared Stateful Terminal (xterm.js + TerminalManager) accessible by User and Agents
-- [ ] System tray with hidden background service (Windows specific)
-- [ ] OCR/image processing
-- [ ] Audio/video transcription (via Gemini Flash Lite)
-- [ ] Cloud synchronization
-
-## Configuration
-
-Edit `.env` file to configure:
-
-- **Default chat model** (`AGENTICAI_DEFAULT_CHAT_MODEL`): choose the model used for UI chat (defaults to `gemini-2.5-flash-lite`).
-- **System prompt** (`AGENTICAI_SYSTEM_PROMPT`): global persona prompt applied to every response.
-- **Summary max tokens** (`AGENTICAI_SUMMARY_MAX_TOKENS`): limit for compressed summaries (default 400).
-- **Tag extraction model** (`AGENTICAI_TAG_EXTRACTION_MODEL`): optional model for automatic tag generation.
-- **Cost limits**: Set budget warnings and limits.
-- **Security**: Configure file access permissions.
-- **Performance**: Adjust token limits and timeouts.
-
-## Cost Management
-
-The system tracks token usage and costs per model. Warnings are shown when:
-- Approaching configured budget threshold
-- Exceeding monthly cost limit
-- Using expensive models for simple tasks
-
-## Security
-
-- File system access requires permission prompts
-- Tool execution is sandboxed
-- API keys stored in `.env` (never committed)
-- Configurable file type restrictions
-
-## Development
-
-Run tests:
-```bash
-pytest tests/
-```
-
-Lint code:
-```bash
-ruff check src/
-```
-
-Type checking:
-```bash
-mypy src/
-```
+- **User-in-the-Loop Permissions**: Operations modifying files, writing to directories, or launching sub-agent tool runs require interactive confirmation or desktop notification consent.
+- **Budget Protection**: Configurable in settings or `.env`, supporting alert thresholds (e.g., 75% warn) and hard caps (100% block/auto-downgrade) to prevent runaway charges.
+- **Zero-Quota API Checks**: Model settings screen queries catalog endpoint models directly rather than executing dummy text completions, avoiding unnecessary cost or quota exceptions.
