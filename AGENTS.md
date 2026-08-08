@@ -273,6 +273,10 @@ data/
   - Wrapped dynamic `child_process.spawn` calls in robust `try...catch` and dynamic import Promise `.catch()` handlers to eliminate fatal unhandled promise rejections that crash the Node.js process.
   - Patched `logger.js` to catch JS `Error` instances and print their full message/stack trace instead of serializing to empty JSON `{}` logs.
   - Created a manual OAuth authentication script (`data/test_spotify_auth.py`) that boots the server and holds the callback listener open for up to 5 minutes to allow stress-free manual browser authorization.
+- **Sub-Agent Output Truncation & Persisted Reload Fixes (`sub_agent_manager.py` & `chat_router.py`)**:
+  - Fixed sub-agent output truncation in Multi-model team mode by streaming the full response text instead of limiting the payload to 300 characters.
+  - Implemented database persistence for all sub-agent runs in Multi-model team mode, saving each expert's output as a `role="sub_agent"` message in the SQLite database on turn completion.
+  - Implemented database persistence for all standard system tool calls in "Auto" mode, compiling detailed tool execution cards (tool name, arguments, and truncated result output) and saving them to the database. These additions allow all purple tool/sub-agent bubbles to reload and display correctly on app/session refreshes.
 - **Tavily MCP Search Integration**:
   - Pre-installed and integrated the Tavily search client server as a local MCP server, providing robust fallback web search capability.
 - **Professional Project Documentation Rewrite**:

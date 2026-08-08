@@ -405,7 +405,7 @@ class SubAgentManager:
             turn += 1
 
         # Stream live sub-agent output to UI via stderr
-        log_payload = json.dumps({"role": role, "model": active_model, "reply": content[:300]})
+        log_payload = json.dumps({"role": role, "model": active_model, "reply": content})
         print(f"SUB_AGENT_MSG:{log_payload}", file=sys.stderr, flush=True)
         print(f"✅ Sub-agent [{role}] completed.", file=sys.stderr, flush=True)
 

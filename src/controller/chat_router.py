@@ -118,6 +118,20 @@ class ChatRouter:
                 attached_file_paths=attached_paths,
             )
             
+            # Save sub-agent results to database so they persist across session reloads
+            for res in sub_results:
+                role_upper = res["role"].upper()
+                model_used = res["model_id"]
+                content_text = res["content"]
+                display_model = f"{role_upper} ({model_used})"
+                self.memory_store.save_message(
+                    session_id=effective_session_id,
+                    role="sub_agent",
+                    content_raw=content_text,
+                    model_id=display_model,
+                    tokens_used=res.get("tokens_used", 0)
+                )
+            
             aggregated = await consensus.synthesize_response(user_message, sub_results)
             assistant_response = {
                 "content": aggregated["content"],
@@ -625,19 +639,39 @@ class ChatRouter:
                         current_time = datetime.now().strftime("%H:%M:%S")
                         print(f"[{current_time}] 🔧 Tool completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
                         
-                        if name == "ask_expert_model":
-                            role_name = tool_result.get("role", "sub_agent").upper()
-                            model_used = tool_result.get("model", "Expert Model")
-                            log_msg = {
-                                "content": f"**Sub-Agent Delegated**: `{role_name}`\n\n{tool_result.get('result', '')}",
-                                "model": f"{role_name} ({model_used})"
-                            }
+                        import json
+                        try:
+                            args_str = json.dumps(arguments, indent=2)
+                        except Exception:
+                            args_str = str(arguments)
+                        
+                        result_val = tool_result.get("result", "")
+                        if isinstance(result_val, (dict, list)):
+                            try:
+                                result_disp = json.dumps(result_val, indent=2)
+                            except Exception:
+                                result_disp = str(result_val)
                         else:
-                            log_msg = {
-                                "content": f"**Used Tool**: `{name}`",
-                                "model": "System Tool"
-                            }
+                            result_disp = str(result_val)
+                        
+                        # Limit the result display length so it doesn't inflate database message size too much
+                        if len(result_disp) > 4000:
+                            result_disp = result_disp[:4000] + "\n... [truncated for UI]"
+                            
+                        log_msg = {
+                            "content": f"🔧 **Tool Call**: `{name}`\n\n**Arguments**:\n```json\n{args_str}\n```\n\n**Result**:\n```text\n{result_disp}\n```",
+                            "model": f"Tool: {name}"
+                        }
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+                        
+                        # Save tool execution log to database so it persists across sessions
+                        self.memory_store.save_message(
+                            session_id=session_id,
+                            role="sub_agent",
+                            content_raw=log_msg["content"],
+                            model_id=log_msg["model"],
+                            tokens_used=0,
+                        )
 
                     messages.append(Message(
                         role="tool",
