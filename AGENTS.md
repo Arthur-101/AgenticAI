@@ -277,6 +277,12 @@ data/
   - Fixed sub-agent output truncation in Multi-model team mode by streaming the full response text instead of limiting the payload to 300 characters.
   - Implemented database persistence for all sub-agent runs in Multi-model team mode, saving each expert's output as a `role="sub_agent"` message in the SQLite database on turn completion.
   - Implemented database persistence for all standard system tool calls in "Auto" mode, compiling detailed tool execution cards (tool name, arguments, and truncated result output) and saving them to the database. These additions allow all purple tool/sub-agent bubbles to reload and display correctly on app/session refreshes.
+- **Model Configuration & Routing Cleanup (`config.py` & `model_router.py`)**:
+  - Updated `model_qwen` default to `"qwen/qwen3.7-flash"` to match `.env`.
+  - Added support for `model_deepseek` and `model_gemini_pro` settings fields to load from corresponding `.env` keys.
+  - Aligned `model_deepseek_flash` to use the `model_deepseek` override value if specified.
+  - Replaced legacy `model_deepseek` attribute reference in `model_router.py` with standard `model_deepseek_flash`.
+  - Resolved complexity routing bug by changing config range keys from (`7-10`, `11-12`) to (`7-9`, `10-12`) to match the keys queried by `ModelRouter`.
 - **Tavily MCP Search Integration**:
   - Pre-installed and integrated the Tavily search client server as a local MCP server, providing robust fallback web search capability.
 - **Professional Project Documentation Rewrite**:

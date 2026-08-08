@@ -177,10 +177,83 @@ class ProviderRouter:
         tokens = resp.usage.total_tokens if resp.usage else 0
         return {"content": content, "model_id": formatted_model, "tokens_used": tokens, "success": True}
 
+    @staticmethod
+    def get_model_pricing_sync(model_id: str) -> Dict[str, float]:
+        """
+        Synchronously look up approximate input/output pricing (per million tokens)
+        for any model ID.  Uses the static fallback catalog so it works without
+        network access or an async context.
+
+        Returns {"input": float, "output": float}  ($/1M tokens).
+        Returns a low safe-fallback if the model is not in the catalog.
+        """
+        import re as _re
+        clean = model_id.strip()
+        if ":" in clean:
+            # strip provider prefix e.g. "google:gemini-2.5-flash"
+            clean = clean.split(":", 1)[1]
+        clean = clean.lower()
+
+        # Ordered list of (substring, input$/1M, output$/1M)
+        _CATALOG = [
+            # OpenRouter / generic
+            ("qwen3",                       0.10,  0.30),
+            ("qwen",                        0.10,  0.30),
+            ("deepseek-v4-flash",           0.14,  0.28),
+            ("deepseek-v4-pro",             0.55,  2.19),
+            ("deepseek-r1-distill",         0.75,  0.99),
+            ("deepseek",                    0.14,  0.28),
+            ("gpt-oss-120b",                0.00,  0.00),
+            # Google
+            ("gemini-3.6-flash",            0.10,  0.40),
+            ("gemini-3.5-flash-lite",       0.075, 0.30),
+            ("gemini-3.5-flash",            0.10,  0.40),
+            ("gemini-3.1-flash-lite",       0.075, 0.30),
+            ("gemini-3.1-pro",              1.25,  5.00),
+            ("gemini-3-flash",              0.10,  0.40),
+            ("gemini-2.5-flash-lite",       0.075, 0.30),
+            ("gemini-2.5-flash",            0.10,  0.40),
+            ("gemini-2.5-pro",              1.25,  5.00),
+            ("gemini-2.0-flash-lite",       0.075, 0.30),
+            ("gemini-2.0-flash",            0.10,  0.40),
+            ("gemini-1.5-flash",            0.075, 0.30),
+            ("gemini-1.5-pro",              1.25,  5.00),
+            # OpenAI
+            ("gpt-4o-mini",                 0.15,  0.60),
+            ("gpt-4o",                      2.50, 10.00),
+            ("o3-mini",                     1.10,  4.40),
+            ("o1-mini",                     1.10,  4.40),
+            ("gpt-3.5-turbo",               0.50,  1.50),
+            # Anthropic
+            ("claude-3-7-sonnet",           3.00, 15.00),
+            ("claude-3-5-sonnet",           3.00, 15.00),
+            ("claude-3-5-haiku",            0.80,  4.00),
+            ("claude-3-haiku",              0.25,  1.25),
+            ("claude",                      3.00, 15.00),
+            # Groq
+            ("llama-3.3-70b",               0.59,  0.79),
+            ("llama-3.1-8b",                0.05,  0.08),
+            ("mixtral-8x7b",                0.24,  0.24),
+            # Mistral
+            ("mistral-large",               2.00,  6.00),
+            ("pixtral-large",               2.00,  6.00),
+            ("codestral",                   0.30,  0.90),
+            ("mistral-small",               0.10,  0.30),
+            ("mistral",                     0.20,  0.60),
+        ]
+
+        for substr, inp, out in _CATALOG:
+            if substr in clean:
+                return {"input": inp, "output": out}
+
+        # Generic fallback — low cost assumption
+        return {"input": 0.10, "output": 0.30}
+
     async def fetch_provider_models(self, provider: str) -> List[Dict[str, Any]]:
         """Fetch models with pricing metadata and active/deprecated flags for provider."""
         provider_lower = provider.lower().strip()
         api_key = self.get_api_key_for_provider(provider_lower)
+
 
         # 1. OpenRouter Catalog
         if provider_lower == "openrouter":

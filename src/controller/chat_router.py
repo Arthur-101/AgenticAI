@@ -392,19 +392,33 @@ class ChatRouter:
         model_override: Optional[str] = None,
     ) -> Any:
         """Select appropriate model based on message and context."""
-        # 1. Explicit model override
+        # 1. Explicit role name override (e.g. user typed "coding" in model selector)
         if model_override and model_override not in ["auto", "collaborative", "team", "multi_model"]:
             if model_override.lower() in ["coding", "reasoning", "multimodal", "synthesizer", "summary", "stt", "tts"]:
                 return self._get_assigned_model_for_role(model_override.lower(), config.settings.default_chat_model)
             return model_override
 
-        # 2. Redis Orchestrator Role Assignment
+        # 2. "auto" mode — use IntelligentRouter for multi-signal task analysis
+        if model_override in (None, "auto"):
+            try:
+                from src.controller.model_router import IntelligentRouter
+                ir = IntelligentRouter(memory_store=self.memory_store)
+                decision = ir.route(
+                    user_message,
+                    context=[m for m in context.assembled_messages if hasattr(m, "role")],
+                )
+                if decision.model_id:
+                    return decision.model_id
+            except Exception:
+                pass  # fall through to orchestrator lookup below
+
+        # 3. Redis Orchestrator Role Assignment
         if redis_store.is_connected():
             redis_model = redis_store.get_role_model("orchestrator")
             if redis_model and redis_model.strip():
                 return redis_model.strip()
 
-        # 3. SQLite Orchestrator Role Assignment
+        # 4. SQLite Orchestrator Role Assignment
         try:
             db_roles = self.memory_store.get_role_assignments()
             if "orchestrator" in db_roles:
@@ -419,7 +433,7 @@ class ChatRouter:
         except Exception:
             pass
 
-        # 4. Fallback default chat model
+        # 5. Fallback default chat model
         return config.settings.default_chat_model
     
     async def _get_assistant_response(
